@@ -95,16 +95,16 @@ class BackendManager:
         self._sem_pg_sync_off = asyncio.Semaphore(settings.postgres_max_concurrency)
 
     async def startup(self) -> None:
-        self._valkey = redis.from_url(
-            settings.valkey_url,
-            max_connections=settings.valkey_max_concurrency,
-            decode_responses=False,
-        )
-        self._valkey_cache = redis.from_url(
-            settings.valkey_cache_url,
-            max_connections=settings.valkey_max_concurrency,
-            decode_responses=False,
-        )
+        # BlockingConnectionPool: when every connection is busy, wait for one
+        # (like asyncpg's pool) instead of raising MaxConnectionsError. The
+        # default redis-py pool raised under the 1000-user load test.
+        def _valkey_client(url: str) -> redis.Redis:
+            pool = redis.BlockingConnectionPool.from_url(
+                url, max_connections=settings.valkey_max_concurrency, timeout=30)
+            return redis.Redis(connection_pool=pool, decode_responses=False)
+
+        self._valkey = _valkey_client(settings.valkey_url)
+        self._valkey_cache = _valkey_client(settings.valkey_cache_url)
         self._pg_pool = await asyncpg.create_pool(
             settings.postgres_dsn,
             min_size=settings.postgres_pool_min,

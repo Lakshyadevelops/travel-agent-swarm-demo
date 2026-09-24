@@ -30,9 +30,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.config import RUNS_DIR
+from app.config import REPO_ROOT, RUNS_DIR
 
 TRACE_PATH = RUNS_DIR / "llm_trace.jsonl"
+COMMITTED_TRACE_PATH = REPO_ROOT / "results" / "llm_trace.jsonl"
 
 # Fallback when no trace exists: gemini-3.5-flash probe, n=12, 0 failures.
 FALLBACK_P50_MS = 6200.0
@@ -100,11 +101,14 @@ class LatencyModel:
 
     @classmethod
     def default(cls, scale: float = 1.0) -> "LatencyModel":
-        if TRACE_PATH.exists():
-            try:
-                return cls.from_trace(TRACE_PATH, scale)
-            except ValueError:
-                pass
+        # Local recordings first, then the trace committed with the repo, so a
+        # fresh clone can load-test without ever touching the API.
+        for path in (TRACE_PATH, COMMITTED_TRACE_PATH):
+            if path.exists():
+                try:
+                    return cls.from_trace(path, scale)
+                except ValueError:
+                    pass
         return cls.from_percentiles(FALLBACK_P50_MS, FALLBACK_P95_MS, scale)
 
 
