@@ -60,11 +60,15 @@ class Settings:
     )
 
     # Concurrency gates are PER BACKEND, never shared: a shared semaphore would
-    # couple the arms and serialise the cached arm against itself.
-    valkey_max_concurrency: int = 32
-    postgres_max_concurrency: int = 16
-    postgres_pool_min: int = 2
-    postgres_pool_max: int = 16
+    # couple the arms and serialise the cached arm against itself. Env-driven so
+    # the multi-process load generator can split Postgres's max_connections=50
+    # budget across worker processes.
+    valkey_max_concurrency: int = field(
+        default_factory=lambda: _int("VALKEY_MAX_CONCURRENCY", 32))
+    postgres_max_concurrency: int = field(
+        default_factory=lambda: _int("POSTGRES_MAX_CONCURRENCY", 16))
+    postgres_pool_min: int = field(default_factory=lambda: _int("POSTGRES_POOL_MIN", 2))
+    postgres_pool_max: int = field(default_factory=lambda: _int("POSTGRES_POOL_MAX", 16))
 
     app_name: str = "travel_swarm"
 

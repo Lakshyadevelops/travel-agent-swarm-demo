@@ -19,7 +19,11 @@ from google.adk.agents import LlmAgent, LoopAgent, ParallelAgent, SequentialAgen
 from google.adk.tools import FunctionTool
 
 from app.agents import prompts
-from app.agents.callbacks import make_after_callback, make_before_callback
+from app.agents.callbacks import (
+    make_after_callback,
+    make_before_callback,
+    make_model_callbacks,
+)
 from app.agents.scratchpad_tools import (
     budget_tool,
     flights_tool,
@@ -80,6 +84,11 @@ def _model_for(agent_name: str, llm_mode: str):
 
 def _build_agent(agent_name: str, llm_mode: str) -> LlmAgent:
     label, instruction, tool, _closing = AGENT_SPECS[agent_name]
+    extra = {}
+    if llm_mode == "gemini":
+        # Record real model latency so load tests can replay it without the API.
+        before_model, after_model = make_model_callbacks(agent_name, settings.gemini_model)
+        extra = {"before_model_callback": before_model, "after_model_callback": after_model}
     return LlmAgent(
         name=agent_name,
         description=label,
@@ -88,6 +97,7 @@ def _build_agent(agent_name: str, llm_mode: str) -> LlmAgent:
         tools=[FunctionTool(tool)] if tool else [],
         before_agent_callback=make_before_callback(agent_name, label),
         after_agent_callback=make_after_callback(agent_name, label),
+        **extra,
     )
 
 
