@@ -1,0 +1,66 @@
+# Infrastructure parity: both stores get an identical 1.0 CPU / 256MB envelope.
+#
+# Why 256MB and not 128MB: measured. postgres:17-alpine under `pgbench -c 16` is
+# OOM-killed at 128MB (run aborted), healthy at 256MB (517 tps) and 512MB (533 tps).
+# 256MB is the smallest cap that does not turn the benchmark into "Postgres gets
+# killed by the kernel", while landing within 3% of 512MB throughput.
+#
+# Configs are otherwise STOCK on purpose. The durability and JSONB differences
+# between these two engines are what this experiment prices; normalising them
+# away would answer a question nobody asked.
+
+x-caps: &caps
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 256M
+
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    # Stock config except maxmemory. Default Valkey has no maxmemory, so under a
+    # 256MB container cap it would be OOM-killed rather than evicting. Any real
+    # developer sets this; it also makes `evicted_keys` observable, which we
+    # surface in the UI as a risk rather than hiding.
+    command: ["valkey-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6379:6379"]
+    <<: *caps
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  postgres:
+    image: postgres:17-alpine
+    # Stock postgresql.conf. synchronous_commit stays at its default `on`.
+    # max_connections is lowered from the stock 100 purely because 100 backend
+    # processes cannot fit a 256MB cap -- an operational necessity, not tuning.
+    command: ["postgres", "-c", "max_connections=50"]
+    environment:
+      POSTGRES_USER: swarm
+      POSTGRES_PASSWORD: swarm
+      POSTGRES_DB: swarm
+    volumes:
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["5432:5432"]
+    <<: *caps
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swarm"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  # Cache tier for the `postgres_cached` arm. Deliberately a separate instance so
+  # it cannot skew the pure `valkey` arm via shared memory or connection pressure.
+  valkey-cache:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6380:6379"]
+    <<: *caps
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10

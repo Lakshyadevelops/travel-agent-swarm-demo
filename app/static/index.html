@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Travel Concierge Swarm</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Travel Concierge Swarm</h1>
+    <p class="sub">Six ADK agents over a shared blackboard &mdash; does an in-memory cache deliver user-facing value?</p>
+  </div>
+  <div id="health" class="health">checking&hellip;</div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="ux">Experience</button>
+  <button class="tab" data-tab="hood">Under the Hood</button>
+</nav>
+
+<!-- ========================= TAB 1 ========================= -->
+<section id="tab-ux" class="panel active">
+  <div class="grid">
+    <div class="card">
+      <h2>Trip brief</h2>
+      <label>Destination <input id="destination" value="Lisbon"></label>
+      <label>Departing from <input id="origin" value="SFO"></label>
+      <div class="row">
+        <label>Start <input id="start_date" type="date" value="2026-10-10"></label>
+        <label>End <input id="end_date" type="date" value="2026-10-14"></label>
+      </div>
+      <div class="row">
+        <label>Travelers <input id="travelers" type="number" min="1" value="2"></label>
+        <label>Budget (USD) <input id="budget_total" type="number" min="0" step="50" value="4000"></label>
+      </div>
+      <label>Anything else? <textarea id="nuance" rows="3"
+        placeholder="Food markets, walkable neighborhoods, no early flights&hellip;"></textarea></label>
+
+      <h3>State backend</h3>
+      <div id="backend-toggle" class="seg"></div>
+      <p id="backend-notes" class="notes"></p>
+
+      <div class="row">
+        <label>LLM mode
+          <select id="llm_mode">
+            <option value="fake">fake (deterministic)</option>
+            <option value="gemini">gemini (live)</option>
+          </select>
+        </label>
+        <label>Writes / step <input id="writes_per_step" type="number" min="1" value="1"></label>
+      </div>
+
+      <button id="plan" class="primary">Plan my trip</button>
+    </div>
+
+    <div class="card">
+      <h2>Agent execution</h2>
+      <ol id="steps" class="steps"><li class="muted">Idle.</li></ol>
+      <div id="run-headline" class="headline hidden">
+        <span class="big" id="headline-ms">&ndash;</span>
+        <span class="unit">ms end-to-end</span>
+        <span class="chip" id="headline-backend"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Itinerary</h2>
+    <div id="itinerary" class="muted">No plan yet.</div>
+  </div>
+</section>
+
+<!-- ========================= TAB 2 ========================= -->
+<section id="tab-hood" class="panel">
+  <div class="card">
+    <h2>Benchmark</h2>
+    <p class="notes">
+      Arms run interleaved (A,B,C,A,B,C&hellip;) with warm-up iterations discarded, and
+      deltas carry a paired bootstrap confidence interval. A CI spanning zero is
+      reported as "no detectable difference" rather than spun as a win.
+    </p>
+    <div class="row">
+      <label>Repeats <input id="bench_repeats" type="number" min="5" value="30"></label>
+      <label>Warm-ups <input id="bench_warmups" type="number" min="0" value="3"></label>
+      <label>Writes / step <input id="bench_writes" type="number" min="1" value="1"></label>
+    </div>
+    <div class="row">
+      <button id="run-bench" class="primary">Run benchmark</button>
+      <button id="run-sweep">Run write-frequency sweep (1 / 10 / 100)</button>
+      <button id="probe-gemini">Probe Gemini latency</button>
+    </div>
+    <div id="bench-progress" class="notes"></div>
+  </div>
+
+  <div id="eviction-banner" class="banner danger hidden"></div>
+
+  <div class="card">
+    <h2>Results</h2>
+    <div id="bench-results" class="muted">No benchmark run yet.</div>
+  </div>
+
+  <div class="card">
+    <h2>Storage delta vs model latency</h2>
+    <p class="notes">
+      The comparison that matters: if the storage delta is a few milliseconds against
+      hundreds of milliseconds of model latency spread, storage choice is invisible to
+      the user &mdash; and that is the finding.
+    </p>
+    <div id="context-chart" class="muted">Run a benchmark and a Gemini probe to populate.</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Live telemetry</h2>
+      <div id="telemetry" class="muted">Run a plan to populate.</div>
+    </div>
+    <div class="card">
+      <h2>Scratchpad state inspector</h2>
+      <pre id="scratchpad" class="json muted">empty</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Methodology</h2>
+    <div id="methodology"></div>
+  </div>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
