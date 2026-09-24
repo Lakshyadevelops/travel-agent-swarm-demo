@@ -10,6 +10,7 @@ from typing import Any
 from google.adk.runners import Runner
 from google.genai import types
 
+from app.agents.blackboard import CURRENT_COORD, Coordinator
 from app.agents.runtime import (
     CURRENT_BRIEF,
     CURRENT_RUN_ID,
@@ -18,7 +19,7 @@ from app.agents.runtime import (
     STEP_SINK,
     WRITES_PER_STEP,
 )
-from app.agents.swarm import build_swarm
+from app.agents.swarm import PLAN_LOOP_MAX_ROUNDS, build_swarm
 from app.config import settings
 from app.providers.tools import PROVIDER_LATENCY_MS
 from app.state.registry import backends
@@ -110,6 +111,11 @@ async def run_swarm(
         else settings.provider_latency_ms
     )
     STEP_SINK.set(step_queue)
+    # Per-run signalling for blackboard waits. Gemini agents can take tens of
+    # seconds to reach their tool call, so the wait timeout is generous there.
+    coord = Coordinator(wait_timeout_s=60.0 if mode == "gemini" else 10.0,
+                        max_rounds=PLAN_LOOP_MAX_ROUNDS)
+    CURRENT_COORD.set(coord)
 
     scratchpad = backends.scratchpad(backend_id)
     session_service = backends.session_service(backend_id)
@@ -156,4 +162,6 @@ async def run_swarm(
     summary["scratchpad"] = board
     summary["llm_mode"] = mode
     summary["writes_per_step"] = WRITES_PER_STEP.get()
+    summary["collaboration"] = coord.trace
+    summary["budget_rounds"] = coord.round + 1
     return summary

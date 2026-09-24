@@ -35,12 +35,19 @@ class FakeLlm(BaseLlm):
 
     @staticmethod
     def _already_called(llm_request: LlmRequest) -> bool:
-        """True once a function response is present in the conversation."""
-        for content in reversed(llm_request.contents or []):
-            for part in content.parts or []:
-                if getattr(part, "function_response", None) is not None:
-                    return True
-        return False
+        """True when the latest turn is our tool's response (i.e. mid-invocation).
+
+        Only the last content counts: in a LoopAgent the agent's own response
+        from an earlier round is still in history, and a real model re-plans
+        after the guardrail's feedback rather than treating the job as done.
+        """
+        contents = llm_request.contents or []
+        if not contents:
+            return False
+        return any(
+            getattr(part, "function_response", None) is not None
+            for part in contents[-1].parts or []
+        )
 
     @staticmethod
     def _usage() -> types.GenerateContentResponseUsageMetadata:

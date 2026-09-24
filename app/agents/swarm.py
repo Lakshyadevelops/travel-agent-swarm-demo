@@ -23,6 +23,7 @@ from app.agents.callbacks import make_after_callback, make_before_callback
 from app.agents.scratchpad_tools import (
     budget_tool,
     flights_tool,
+    intake_tool,
     itinerary_tool,
     scout_tool,
     stays_tool,
@@ -30,10 +31,12 @@ from app.agents.scratchpad_tools import (
 from app.config import settings
 from app.llm.fake_llm import FakeLlm
 
+PLAN_LOOP_MAX_ROUNDS = 3
+
 # name -> (label, instruction, tool, closing line used by FakeLlm)
 AGENT_SPECS = {
     "supervisor_intake": (
-        "Supervisor · intake", prompts.SUPERVISOR_INTAKE, None,
+        "Supervisor · intake", prompts.SUPERVISOR_INTAKE, intake_tool,
         "Brief understood. Dispatching the specialists.",
     ),
     "destination_scout": (
@@ -104,7 +107,7 @@ def build_swarm(llm_mode: str | None = None) -> SequentialAgent:
     plan_loop = LoopAgent(
         name="plan_loop",
         description="Research and budget-check until the plan fits the ceiling",
-        max_iterations=3,
+        max_iterations=PLAN_LOOP_MAX_ROUNDS,
         sub_agents=[research_fanout, _build_agent("budget_guardrail", mode)],
     )
 
