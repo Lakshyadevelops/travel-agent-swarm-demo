@@ -18,7 +18,7 @@ x-caps: &caps
 
 services:
   valkey:
-    image: valkey/valkey:8-alpine
+    image: valkey/valkey:9.1-alpine
     # Stock config except maxmemory. Default Valkey has no maxmemory, so under a
     # 256MB container cap it would be OOM-killed rather than evicting. Any real
     # developer sets this; it also makes `evicted_keys` observable, which we
@@ -55,7 +55,7 @@ services:
   # Cache tier for the `postgres_cached` arm. Deliberately a separate instance so
   # it cannot skew the pure `valkey` arm via shared memory or connection pressure.
   valkey-cache:
-    image: valkey/valkey:8-alpine
+    image: valkey/valkey:9.1-alpine
     command: ["valkey-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
     ports: ["6380:6379"]
     <<: *caps

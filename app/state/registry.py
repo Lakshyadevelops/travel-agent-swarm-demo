@@ -40,7 +40,7 @@ BACKEND_SPECS: dict[str, BackendSpec] = {
         id="valkey",
         label="Valkey (in-memory)",
         notes=(
-            "Valkey 8 alpine, stock config except maxmemory=200mb/allkeys-lru. "
+            "Valkey 9.1 alpine, stock config except maxmemory=200mb/allkeys-lru. "
             "Native HASH scratchpad with EXPIRE; sessions as HASH + ZSET. "
             "No fsync-per-commit durability: this is the property being priced."
         ),
@@ -60,7 +60,7 @@ BACKEND_SPECS: dict[str, BackendSpec] = {
         id="postgres_cached",
         label="PostgreSQL + Valkey cache",
         notes=(
-            "Postgres 17 as durable system of record with a separate Valkey 8 "
+            "Postgres 17 as durable system of record with a separate Valkey 9.1 "
             "cache-aside tier. Write-through; reads served from cache on hit. "
             "This is the realistic 'should I add a cache?' configuration."
         ),
