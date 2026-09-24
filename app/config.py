@@ -25,9 +25,10 @@ def _int(name: str, default: int) -> int:
 class Settings:
     google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     gemini_model: str = field(
-        # 3.5-flash rather than 3.8-flash: 3.8 was returning frequent 503s
-        # (2/12 probe calls failed), which surfaces as agent errors mid-demo.
-        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        # 3.8-flash then 3.5-flash returned frequent 503 UNAVAILABLE under
+        # demand; 3.6-flash was 4/4 in a probe at similar latency. Agents also
+        # retry 429/5xx with backoff (see swarm._model_for).
+        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     )
     llm_mode: str = field(default_factory=lambda: os.getenv("LLM_MODE", "fake"))
 

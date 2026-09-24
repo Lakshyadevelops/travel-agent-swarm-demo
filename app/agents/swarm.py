@@ -16,7 +16,9 @@ storage comparison is actually about.
 from __future__ import annotations
 
 from google.adk.agents import LlmAgent, LoopAgent, ParallelAgent, SequentialAgent
+from google.adk.models.google_llm import Gemini
 from google.adk.tools import FunctionTool
+from google.genai import types
 
 from app.agents import prompts
 from app.agents.callbacks import (
@@ -74,7 +76,15 @@ def _model_for(agent_name: str, llm_mode: str):
     """Real Gemini, or the deterministic stub, behind an identical graph."""
     label, instruction, tool, closing = AGENT_SPECS[agent_name]
     if llm_mode == "gemini":
-        return settings.gemini_model
+        # Retry transient overload errors (503 UNAVAILABLE, 429, 5xx) with
+        # exponential backoff instead of failing the agent mid-plan.
+        return Gemini(
+            model=settings.gemini_model,
+            retry_options=types.HttpRetryOptions(
+                attempts=5, initial_delay=1.0, max_delay=16.0, exp_base=2.0,
+                jitter=0.5, http_status_codes=[429, 500, 502, 503, 504],
+            ),
+        )
     return FakeLlm(
         role=agent_name,
         tool_name=tool.__name__ if tool else None,
