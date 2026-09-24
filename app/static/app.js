@@ -116,6 +116,14 @@ $("plan").onclick = async () => {
             li.className = "done";
             li.innerHTML = `${esc(msg.label)} <span class="ms">${msg.duration_ms} ms</span>`;
           }
+        } else if (msg.type === "blackboard") {
+          const li = document.createElement("li");
+          li.className = "bb bb-" + msg.action;
+          const arrow = msg.action === "wrote" ? "\u2192 posted" : msg.action === "read" ? "\u2190 read" : "\u23f1 " + msg.action;
+          li.innerHTML = `<span class="bb-agent">${esc(msg.agent)}</span> ${arrow} <code>${esc(msg.field)}</code>`
+            + (msg.detail ? ` <span class="ms">${esc(msg.detail)}</span>` : "");
+          $("steps").appendChild(li);
+          $("steps").scrollTop = $("steps").scrollHeight;
         } else if (msg.type === "complete") {
           renderResult(msg.result);
         } else if (msg.type === "error") {
@@ -140,32 +148,77 @@ function renderResult(r) {
   if (!it) {
     $("itinerary").innerHTML = '<span class="muted">No itinerary produced.</span>';
   } else {
-    const money = (v) => "$" + Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
-    $("itinerary").innerHTML = `
-      <div class="kv">
-        <div><div class="k">Destination</div>${esc(it.destination)}</div>
-        <div><div class="k">Flight</div>${it.flight ? esc(it.flight.carrier) + " &middot; " + money(it.flight.price_usd) : "&ndash;"}</div>
-        <div><div class="k">Stay</div>${it.stay ? esc(it.stay.name) + " &middot; " + money(it.stay.nightly_usd) + "/night" : "&ndash;"}</div>
-        <div><div class="k">Total</div>${money(it.total_estimate_usd)}</div>
-        <div><div class="k">Budget</div>${it.within_budget
-          ? '<span style="color:var(--accent-2)">within</span>'
-          : '<span style="color:var(--danger)">over</span>'}</div>
-      </div>
-      <p class="notes">${esc(it.summary)}</p>
-      ${(it.days || []).map((d) => `
-        <div class="day">
-          <h4>Day ${d.day}</h4>
-          <p><strong>Morning</strong> &middot; ${esc(d.morning)}</p>
-          <p><strong>Afternoon</strong> &middot; ${esc(d.afternoon)}</p>
-          <p><strong>Evening</strong> &middot; ${esc(d.evening)}</p>
-        </div>`).join("")}
-      ${r.final_text ? `<p class="notes">${esc(r.final_text)}</p>` : ""}`;
+    $("itinerary").innerHTML = renderItinerary(it, r);
   }
 
   renderTelemetry(r);
   $("scratchpad").textContent = JSON.stringify(r.scratchpad || {}, null, 2);
   $("scratchpad").classList.remove("muted");
   checkEviction(r.evicted_keys, r.backend);
+}
+
+const MODE_ICON = { walk: "\u{1F6B6}", metro: "\u{1F687}", taxi: "\u{1F695}", rail: "\u{1F686}" };
+const TIME_ICON = { sunrise: "\u{1F305}", sunset: "\u{1F307}", evening: "\u{1F319}", morning: "\u2600\uFE0F", midday: "\u2600\uFE0F", afternoon: "\u26C5", anytime: "\u2022" };
+const money = (v) => "$" + Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+function legHtml(leg) {
+  if (!leg) return "";
+  return `<div class="leg">${MODE_ICON[leg.mode] || ""} ${esc(leg.mode)} &middot; ${Number(leg.distance_km).toFixed(1)} km &middot; ${leg.minutes} min${leg.cost_usd ? " &middot; " + money(leg.cost_usd) : ""}</div>`;
+}
+
+function itemHtml(i) {
+  if (i.kind === "arrival") {
+    return `<div class="item arrival">${legHtml(i.leg)}<div class="when">${esc(i.start)}</div>
+      <div class="what"><strong>\u2708\uFE0F ${esc(i.name)}</strong><div class="why">${esc(i.note)}</div></div></div>`;
+  }
+  if (i.kind === "lunch") {
+    return `<div class="item lunch"><div class="when">${esc(i.start)}</div>
+      <div class="what">\u{1F37D}\uFE0F ${esc(i.name)}</div></div>`;
+  }
+  return `${legHtml(i.leg)}<div class="item stop">
+      <div class="when">${esc(i.start)}<span>${esc(i.end)}</span></div>
+      <div class="what">
+        <strong>${TIME_ICON[i.best_time] || ""} ${esc(i.name)}</strong>
+        ${i.cost_usd ? `<span class="cost">${money(i.cost_usd)}</span>` : ""}
+        <div class="why">Best ${esc(i.best_time)}: ${esc(i.why_this_time)}${i.wait_min > 20 ? ` &middot; ${i.wait_min} min free before` : ""}</div>
+        ${i.tip ? `<div class="tip">${esc(i.tip)}</div>` : ""}
+      </div></div>`;
+}
+
+function renderItinerary(it, r) {
+  const c = it.collaboration || {};
+  const b = it.breakdown || {};
+  const collab = ["scout", "stay", "transit", "budget"].filter((k) => c[k]).map((k) =>
+    `<li><span class="bb-agent">${k}</span> ${esc(c[k])}</li>`).join("");
+  const rounds = r.budget_rounds > 1 ? ` &middot; ${r.budget_rounds} budget rounds` : "";
+
+  return `
+    <div class="kv">
+      <div><div class="k">Destination</div>${esc(it.destination)}</div>
+      <div><div class="k">Base</div>${esc(it.base_area || "\u2013")}</div>
+      <div><div class="k">Flight</div>${it.flight ? esc(it.flight.carrier) + " &middot; " + money(it.flight.price_usd) : "&ndash;"}</div>
+      <div><div class="k">Stay</div>${it.stay ? esc(it.stay.name) + " &middot; " + money(it.stay.nightly_usd) + "/night" : "&ndash;"}</div>
+      <div><div class="k">Total</div>${money(it.total_estimate_usd)}
+        <div class="muted small">flight ${money(b.flight_usd)} &middot; stay ${money(b.stay_usd)} &middot; on the ground ${money(b.ground_usd)}</div></div>
+      <div><div class="k">Budget</div>${it.within_budget
+        ? '<span style="color:var(--accent-2)">within</span>'
+        : '<span style="color:var(--danger)">over</span>'}${rounds}</div>
+    </div>
+    <p class="notes">${esc(it.summary)}</p>
+    ${collab ? `<details class="collab" open><summary>How the agents collaborated</summary><ul>${collab}</ul></details>` : ""}
+    ${(it.days || []).map((d) => `
+      <div class="day">
+        <div class="day-head">
+          <h4>Day ${d.day} &middot; ${esc(d.weekday || "")} ${esc(d.date || "")}</h4>
+          <span class="sun">${d.sunrise ? `\u{1F305} ${esc(d.sunrise)} &nbsp; \u{1F307} ${esc(d.sunset)}` : esc(d.daylight || "")}</span>
+        </div>
+        <div class="day-title">${esc(d.title || "")}</div>
+        ${(d.items || []).map(itemHtml).join("")}
+        ${d.return_leg ? `<div class="item back">${legHtml(d.return_leg)}<div class="what muted">Back to ${esc(d.return_leg.to)}</div></div>` : ""}
+        ${d.totals ? `<div class="day-foot">${d.totals.distance_km} km travelled (${d.totals.walk_km} km on foot) &middot; ${d.totals.travel_min} min in transit &middot; ~${money(d.est_cost_usd)} incl. food</div>` : ""}
+      </div>`).join("")}
+    ${it.unscheduled && it.unscheduled.length ? `<p class="notes">Didn't fit: ${it.unscheduled.map(esc).join(", ")}</p>` : ""}
+    ${r.final_text ? `<p class="notes">${esc(r.final_text)}</p>` : ""}`;
 }
 
 function renderTelemetry(r) {
