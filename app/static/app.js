@@ -347,6 +347,28 @@ function setRunning(on) {
   $("brief-form").setAttribute("aria-busy", String(on));
 }
 
+// The server answers /api/run at once and, while a model call is in flight,
+// sends a keep-alive every 15 s (app/main.py HEARTBEAT_S). The windows are
+// generous because the demo is reached through the BeyondCorp proxy (GFE),
+// which may batch small chunks: only a connection that is really gone should
+// trip them, never a slow model.
+const CONNECT_TIMEOUT_MS = 30000;
+const STALL_TIMEOUT_MS = 90000; // six missed keep-alives
+
+/** Aborts `controller` unless re-armed within the given time. */
+function watchdog(controller) {
+  let timer = 0;
+  return {
+    arm(ms) {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), ms);
+    },
+    stop() {
+      clearTimeout(timer);
+    },
+  };
+}
+
 async function startRun() {
   if (app.running) return;
   const form = $("brief-form");
@@ -364,55 +386,73 @@ async function startRun() {
     return;
   }
 
+  // From here on everything sits inside try/finally, so no failure can leave
+  // the button stuck on "Planning…".
   setRunning(true);
-  let res = null;
+  const status = $("team-status");
+  const idleStatus = status.textContent;
+  status.textContent = "Contacting your travel team…";
+  const controller = new AbortController();
+  const dog = watchdog(controller);
+  let run = null;
   try {
-    res = await fetch("/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ ...brief, backend: app.store }),
-    });
-  } catch {
-    res = null;
-  }
-  if (!res || !res.ok || !res.body) {
-    setRunning(false);
-    showTab("ux");
-    showFormError(
-      res
-        ? await describeHttpError(res)
-        : "We couldn't reach the concierge. Check your connection and try again.",
-    );
-    return;
-  }
+    dog.arm(CONNECT_TIMEOUT_MS);
+    let res = null;
+    try {
+      res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ ...brief, backend: app.store }),
+        signal: controller.signal,
+      });
+    } catch {
+      res = null;
+    }
+    if (!res || !res.ok || !res.body) {
+      let message = "We couldn't reach the concierge. Check your connection and try again.";
+      if (res) message = await describeHttpError(res);
+      else if (controller.signal.aborted) message = "The concierge didn't answer in time. Please try again.";
+      status.textContent = idleStatus;
+      showTab("ux");
+      showFormError(message);
+      return;
+    }
 
-  const run = newRun(brief, app.store);
-  app.run = run;
-  resetExperience();
-  resetHood(run);
-  try {
-    await readEvents(res.body, (msg) => handleEvent(run, msg));
+    run = newRun(brief, app.store);
+    app.run = run;
+    resetExperience();
+    resetHood(run);
+    dog.arm(STALL_TIMEOUT_MS);
+    await readEvents(res.body, (msg) => handleEvent(run, msg), () => dog.arm(STALL_TIMEOUT_MS));
     if (run.status === "running") {
       failRun(run, "The connection closed before your plan was finished. Please try again.");
     }
   } catch {
-    if (run.status === "running") {
+    if (run && run.status === "running") {
       failRun(run, "We lost the connection while planning. Please try again.");
+    } else if (!run) {
+      status.textContent = idleStatus;
+      showTab("ux");
+      showFormError("Something went wrong starting your plan. Please try again.");
     }
   } finally {
+    dog.stop();
+    controller.abort(); // no-op after a clean finish; else frees the stream
     setRunning(false);
     refreshHealth();
   }
 }
 
-/** Parse the SSE stream by hand: EventSource cannot send a POST. */
-async function readEvents(body, onEvent) {
+/** Parse the SSE stream by hand: EventSource cannot send a POST.
+ * `onChunk` runs for every chunk received, keep-alive comments included. */
+async function readEvents(body, onEvent, onChunk = () => {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    onChunk();
     buffer += decoder.decode(value, { stream: true });
     let cut;
     while ((cut = buffer.indexOf("\n\n")) >= 0) {
@@ -423,7 +463,7 @@ async function readEvents(body, onEvent) {
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).replace(/^ /, ""))
         .join("\n");
-      if (!data) continue;
+      if (!data) continue; // e.g. ": keep-alive"
       let msg;
       try {
         msg = JSON.parse(data);

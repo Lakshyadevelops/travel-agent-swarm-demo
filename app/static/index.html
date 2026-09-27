@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Plan a trip with a team of AI travel specialists, and see how they collaborate under the hood.">
   <title>Travel Concierge</title>
-  <link rel="stylesheet" href="/static/styles.css">
-  <script src="/static/app.js" defer></script>
+  <!-- The server sets each ?v= to a content hash of the assets: see app/main.py index(). -->
+  <link rel="stylesheet" href="/static/styles.css?v=__ASSET_VERSION__">
+  <script src="/static/app.js?v=__ASSET_VERSION__" defer></script>
 </head>
 <body>
   <header class="topbar">

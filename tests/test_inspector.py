@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
+import re
 import uuid
 
 import httpx
@@ -265,3 +267,51 @@ async def test_config_and_security_headers():
     if settings.google_api_key:
         assert settings.google_api_key not in cfg.text
     assert set(health.json()["stores"]) == {"valkey", "postgres"}
+
+
+async def test_page_pins_asset_versions_and_is_revalidated():
+    """Regression: a browser ran the new page with an old cached app.js, whose
+    Plan handler threw after showing "Planning…" and never sent the request."""
+    version = main.asset_version()
+    async with _client() as client:
+        page = await client.get("/")
+        assets = [await client.get(f"/static/{name}?v={version}") for name in main.UI_ASSETS]
+
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    assert page.headers["cache-control"] == "no-cache"
+    assert "__ASSET_VERSION__" not in page.text
+    assert f'<script src="/static/app.js?v={version}" defer></script>' in page.text
+    assert f'<link rel="stylesheet" href="/static/styles.css?v={version}">' in page.text
+    for asset in assets:
+        assert asset.status_code == 200
+        assert asset.headers["cache-control"] == "no-cache"
+        assert asset.headers["etag"]  # so revalidation is a cheap 304
+        assert asset.headers["x-content-type-options"] == "nosniff"
+
+
+def test_asset_version_follows_content(tmp_path):
+    for name in main.UI_ASSETS:
+        (tmp_path / name).write_text("v1")
+    before = main.asset_version(tmp_path)
+    assert re.fullmatch(r"[0-9a-f]{12}", before)
+    assert main.asset_version(tmp_path) == before
+    (tmp_path / "styles.css").write_text("v2")
+    assert main.asset_version(tmp_path) != before
+
+
+async def test_quiet_run_stream_sends_keep_alives(monkeypatch):
+    """Long model calls leave the queue empty; comments keep the stream visibly alive."""
+    async def slow_swarm(*args, **kwargs):
+        await asyncio.sleep(0.3)
+        return {"itinerary": {"days": []}}
+
+    monkeypatch.setattr(main, "UI_LLM_MODE", "fake")
+    monkeypatch.setattr(main, "run_swarm", slow_swarm)
+    monkeypatch.setattr(main, "HEARTBEAT_S", 0.05)
+    async with _client() as client:
+        text = (await client.post("/api/run", json=BRIEF)).text
+
+    assert text.count(": keep-alive\n\n") >= 2
+    assert [e["type"] for e in _sse(text)] == ["started", "complete"]
+    assert [e["seq"] for e in _sse(text)] == [1, 2]  # comments carry no event

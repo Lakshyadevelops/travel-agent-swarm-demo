@@ -20,6 +20,7 @@ paid model calls), TLS and HSTS.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -31,7 +32,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import MutableHeaders
@@ -47,6 +48,15 @@ from app.telemetry.feed import RunStream
 log = logging.getLogger("travel_swarm.api")
 
 STATIC_DIR = Path(__file__).parent / "static"
+# The page's script and stylesheet. index.html requests them with a content
+# hash in the URL (see asset_version), so a browser never pairs a new page with
+# an older copy of either that it cached earlier.
+UI_ASSETS = ("app.js", "styles.css")
+
+# While a model call is in flight the run stream can be quiet for a long time.
+# A comment line this often keeps proxies from idling it out, and lets the page
+# tell a slow model from a dead connection (app.js STALL_TIMEOUT_MS).
+HEARTBEAT_S = 15.0
 
 # UI runs always use the live model. The scripted model is only for benchmarks
 # and tests; tests override this constant. There is deliberately no request
@@ -113,6 +123,11 @@ class SecurityHeaders:
             return
         path = scope.get("path", "")
         no_store = path.startswith("/api/") or path == "/healthz"
+        # Without an explicit policy browsers cache the page and its assets
+        # heuristically (from Last-Modified), and after a deploy can run a new
+        # page with an old cached app.js. Always revalidate instead: for static
+        # files that is a cheap 304 via their ETag.
+        revalidate = path == "/" or path.startswith("/static/")
 
         async def send_with_headers(message) -> None:
             if message["type"] == "http.response.start":
@@ -121,6 +136,8 @@ class SecurityHeaders:
                     headers[name] = value
                 if no_store:
                     headers["Cache-Control"] = "no-store"
+                elif revalidate:
+                    headers["Cache-Control"] = "no-cache"
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
@@ -253,7 +270,13 @@ async def run(brief: Brief) -> StreamingResponse:
         task = asyncio.create_task(execute())
         try:
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_S)
+                except TimeoutError:
+                    # An SSE comment: the page ignores it, but it proves the
+                    # connection is alive while the model is thinking.
+                    yield ": keep-alive\n\n"
+                    continue
                 if item is None:
                     break
                 yield f"data: {json.dumps(item, default=str)}\n\n"
@@ -287,9 +310,20 @@ async def inspect_run(run_id: str) -> dict[str, Any]:
     return snap
 
 
+def asset_version(static_dir: Path = STATIC_DIR) -> str:
+    """Short content hash of UI_ASSETS; changes whenever either file does."""
+    digest = hashlib.sha256()
+    for name in UI_ASSETS:
+        digest.update((static_dir / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
 @app.get("/", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+async def index() -> HTMLResponse:
+    # A new URL per asset version: a browser that cached an older app.js under
+    # the plain URL (before no-cache was sent) cannot reuse it with this page.
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(page.replace("__ASSET_VERSION__", asset_version()))
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
