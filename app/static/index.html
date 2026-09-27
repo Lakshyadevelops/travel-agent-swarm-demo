@@ -1,137 +1,168 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Travel Concierge Swarm</title>
-<link rel="stylesheet" href="/static/styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Plan a trip with a team of AI travel specialists, and see how they collaborate under the hood.">
+  <title>Travel Concierge</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <h1>Travel Concierge Swarm</h1>
-    <p class="sub">Six ADK agents over a shared blackboard &mdash; does an in-memory cache deliver user-facing value?</p>
-  </div>
-  <div id="health" class="health">checking&hellip;</div>
-</header>
-
-<nav class="tabs">
-  <button class="tab active" data-tab="ux">Experience</button>
-  <button class="tab" data-tab="hood">Under the Hood</button>
-</nav>
-
-<!-- ========================= TAB 1 ========================= -->
-<section id="tab-ux" class="panel active">
-  <div class="grid">
-    <div class="card">
-      <h2>Trip brief</h2>
-      <label>Destination <input id="destination" value="Lisbon" list="dest-list"></label>
-      <datalist id="dest-list">
-        <option value="Paris"><option value="London"><option value="New York"><option value="Tokyo">
-        <option value="Lisbon"><option value="Kyoto"><option value="Mexico City"><option value="Reykjavik">
-      </datalist>
-      <label>Departing from <input id="origin" value="SFO"></label>
-      <div class="row">
-        <label>Start <input id="start_date" type="date" value="2026-10-10"></label>
-        <label>End <input id="end_date" type="date" value="2026-10-14"></label>
-      </div>
-      <div class="row">
-        <label>Travelers <input id="travelers" type="number" min="1" value="2"></label>
-        <label>Budget (USD) <input id="budget_total" type="number" min="0" step="50" value="4000"></label>
-      </div>
-      <label>Anything else? <textarea id="nuance" rows="3"
-        placeholder="Food markets, walkable neighborhoods, no early flights&hellip;"></textarea></label>
-
-      <h3>State backend</h3>
-      <div id="backend-toggle" class="seg"></div>
-      <p id="backend-notes" class="notes"></p>
-
-      <div class="row">
-        <label>LLM mode
-          <select id="llm_mode">
-            <option value="fake">fake (deterministic)</option>
-            <option value="gemini">gemini (live)</option>
-          </select>
-        </label>
-        <label>Writes / step <input id="writes_per_step" type="number" min="1" value="1"></label>
-      </div>
-
-      <button id="plan" class="primary">Plan my trip</button>
-    </div>
-
-    <div class="card">
-      <h2>Agent execution</h2>
-      <ol id="steps" class="steps"><li class="muted">Idle.</li></ol>
-      <div id="run-headline" class="headline hidden">
-        <span class="big" id="headline-ms">&ndash;</span>
-        <span class="unit">ms end-to-end</span>
-        <span class="chip" id="headline-backend"></span>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Travel Concierge</h1>
+        <p class="tagline">Six AI specialists plan your trip together.</p>
       </div>
     </div>
-  </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button id="tab-btn-ux" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="tab-ux" data-tab="ux">Experience</button>
+      <button id="tab-btn-hood" class="tab" type="button" role="tab" aria-selected="false" aria-controls="tab-hood" data-tab="hood">Under the Hood</button>
+    </nav>
+  </header>
 
-  <div class="card">
-    <h2>Itinerary</h2>
-    <div id="itinerary" class="muted">No plan yet.</div>
-  </div>
-</section>
+  <main>
+    <!-- ======================= Experience: the customer's view ======================= -->
+    <section id="tab-ux" class="panel active" role="tabpanel" aria-labelledby="tab-btn-ux">
+      <div class="ux-grid">
+        <form id="brief-form" class="card brief" autocomplete="off" novalidate>
+          <h2>Your trip</h2>
+          <label class="field">
+            <span>Destination</span>
+            <input id="destination" name="destination" list="dest-list" value="Lisbon" maxlength="80" required>
+          </label>
+          <datalist id="dest-list"></datalist>
+          <label class="field">
+            <span>Departing from</span>
+            <input id="origin" name="origin" value="SFO" minlength="2" maxlength="40" required>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Leaving</span>
+              <input id="start_date" name="start_date" type="date" value="2026-10-10" required>
+            </label>
+            <label class="field">
+              <span>Returning</span>
+              <input id="end_date" name="end_date" type="date" value="2026-10-14" required>
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span>Travelers</span>
+              <input id="travelers" name="travelers" type="number" min="1" max="12" step="1" value="2" required>
+            </label>
+            <label class="field">
+              <span>Budget (USD)</span>
+              <input id="budget_total" name="budget_total" type="number" min="0" max="1000000" step="1" value="4000" required>
+            </label>
+          </div>
+          <label class="field">
+            <span>Anything else we should know?</span>
+            <textarea id="nuance" name="nuance" rows="3" maxlength="1000" placeholder="Food markets, sunset viewpoints, walkable neighborhoods, no early starts…"></textarea>
+          </label>
+          <p id="form-error" class="form-error hidden" role="alert"></p>
+          <p id="config-warning" class="form-error hidden" role="status"></p>
+          <button id="plan" class="primary" type="submit">Plan my trip</button>
+        </form>
 
-<!-- ========================= TAB 2 ========================= -->
-<section id="tab-hood" class="panel">
-  <div class="card">
-    <h2>Benchmark</h2>
-    <p class="notes">
-      Arms run interleaved (A,B,C,A,B,C&hellip;) with warm-up iterations discarded, and
-      deltas carry a paired bootstrap confidence interval. A CI spanning zero is
-      reported as "no detectable difference" rather than spun as a win.
-    </p>
-    <div class="row">
-      <label>Repeats <input id="bench_repeats" type="number" min="5" value="30"></label>
-      <label>Warm-ups <input id="bench_warmups" type="number" min="0" value="3"></label>
-      <label>Writes / step <input id="bench_writes" type="number" min="1" value="1"></label>
-    </div>
-    <div class="row">
-      <button id="run-bench" class="primary">Run benchmark</button>
-      <button id="run-sweep">Run write-frequency sweep (1 / 10 / 100)</button>
-      <button id="probe-gemini">Probe Gemini latency</button>
-    </div>
-    <div id="bench-progress" class="notes"></div>
-  </div>
+        <section class="card team-card" aria-labelledby="team-heading">
+          <h2 id="team-heading">Your travel team</h2>
+          <p id="team-status" class="team-status" aria-live="polite">Tell us about your trip and press Plan my trip.</p>
+          <ol id="team" class="team"></ol>
+        </section>
+      </div>
 
-  <div id="eviction-banner" class="banner danger hidden"></div>
+      <section class="itinerary-section" aria-labelledby="itinerary-heading">
+        <div class="section-head">
+          <h2 id="itinerary-heading">Your itinerary</h2>
+          <span id="itinerary-meta" class="meta"></span>
+        </div>
+        <div id="itinerary" class="itinerary">
+          <p class="empty">Your day-by-day plan will appear here.</p>
+        </div>
+      </section>
+    </section>
 
-  <div class="card">
-    <h2>Results</h2>
-    <div id="bench-results" class="muted">No benchmark run yet.</div>
-  </div>
+    <!-- ============ Under the Hood: what the agents store, step by step ============ -->
+    <section id="tab-hood" class="panel" role="tabpanel" aria-labelledby="tab-btn-hood">
+      <div class="card runbar">
+        <div class="run-info">
+          <span class="run-label">Run</span>
+          <code id="hood-run" class="run-id">none yet</code>
+          <span id="hood-store" class="chip hidden"></span>
+          <span id="hood-model" class="chip hidden"></span>
+          <span id="hood-status" class="chip status idle">idle</span>
+          <span id="hood-counts" class="counts"></span>
+        </div>
+        <div class="run-controls">
+          <span class="run-label">Next run uses</span>
+          <div id="store-switch" class="seg" role="group" aria-label="Store for the next run"></div>
+          <button id="run-again" type="button">Run again</button>
+          <span id="health" class="health" aria-live="polite"></span>
+        </div>
+      </div>
 
-  <div class="card">
-    <h2>Storage delta vs model latency</h2>
-    <p class="notes">
-      The comparison that matters: if the storage delta is a few milliseconds against
-      hundreds of milliseconds of model latency spread, storage choice is invisible to
-      the user &mdash; and that is the finding.
-    </p>
-    <div id="context-chart" class="muted">Run a benchmark and a Gemini probe to populate.</div>
-  </div>
+      <div class="hood-grid">
+        <div class="hood-col">
+          <section class="card timeline-card" aria-labelledby="timeline-heading">
+            <div class="card-head">
+              <h2 id="timeline-heading">Timeline</h2>
+              <div id="tl-filters" class="seg small" role="group" aria-label="Filter the timeline">
+                <button type="button" data-filter="all" class="on">All</button>
+                <button type="button" data-filter="session">Session</button>
+                <button type="button" data-filter="scratchpad">Scratchpad</button>
+                <button type="button" data-filter="agents">Agents</button>
+              </div>
+            </div>
+            <ol id="timeline" class="timeline" tabindex="0" aria-label="Run timeline"></ol>
+            <div class="tl-controls">
+              <button id="tl-prev" type="button">◀ Prev</button>
+              <button id="tl-next" type="button">Next ▶</button>
+              <button id="tl-replay" type="button">Replay</button>
+              <button id="tl-live" type="button" class="on">● Live</button>
+              <span id="tl-pos" class="tl-pos"></span>
+            </div>
+          </section>
 
-  <div class="grid">
-    <div class="card">
-      <h2>Live telemetry</h2>
-      <div id="telemetry" class="muted">Run a plan to populate.</div>
-    </div>
-    <div class="card">
-      <h2>Scratchpad state inspector</h2>
-      <pre id="scratchpad" class="json muted">empty</pre>
-    </div>
-  </div>
+          <section class="card" aria-labelledby="detail-heading">
+            <h2 id="detail-heading">Step detail</h2>
+            <div id="detail" class="detail"></div>
+          </section>
+        </div>
 
-  <div class="card">
-    <h2>Methodology</h2>
-    <div id="methodology"></div>
-  </div>
-</section>
+        <div class="hood-col">
+          <section class="card" aria-labelledby="session-heading">
+            <div class="card-head">
+              <h2 id="session-heading">Session storage</h2>
+              <span id="session-where" class="where"></span>
+            </div>
+            <div id="session-panel"></div>
+          </section>
 
-<script src="/static/app.js"></script>
+          <section class="card" aria-labelledby="scratch-heading">
+            <div class="card-head">
+              <h2 id="scratch-heading">Shared scratchpad</h2>
+              <span id="scratch-where" class="where"></span>
+            </div>
+            <div id="scratch-panel"></div>
+          </section>
+        </div>
+      </div>
+
+      <details id="raw" class="card raw">
+        <summary>
+          <span class="raw-title">Raw store contents</span>
+          <span id="raw-sub" class="raw-sub">what is physically in the store for this run</span>
+        </summary>
+        <div class="raw-toolbar">
+          <button id="raw-refresh" type="button">Refresh</button>
+          <span id="raw-status" class="muted"></span>
+        </div>
+        <div id="raw-body"></div>
+      </details>
+    </section>
+  </main>
 </body>
 </html>
