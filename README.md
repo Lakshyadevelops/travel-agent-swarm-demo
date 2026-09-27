@@ -33,16 +33,38 @@ Both stores use **stock configs** capped at **1 CPU / 256 MB** each (`docker-com
 ## Quick start
 
 ```bash
-docker compose up -d
+docker compose up -d            # stores listen on 127.0.0.1 only
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env            # add GOOGLE_API_KEY for real Gemini mode
+cp .env.example .env            # add GOOGLE_API_KEY: the UI always plans with live Gemini
 .venv/bin/python -m uvicorn app.main:app --port 8080
-.venv/bin/python -m pytest -q   # 72 tests
+.venv/bin/python -m pytest -q   # 100 tests; they use the scripted model, no API calls
 ```
 
-The UI has two tabs:
-- **Tab 1:** the planner, with a live agent log and the itinerary.
-- **Tab 2:** benchmark controls and results, a telemetry view of the scratchpad, and a methodology panel.
+The UI has two tabs, one per audience. One event stream per run feeds both.
+- **Experience** (customer demo):
+  - The trip form, with structured fields plus free text.
+  - The travel team's progress in plain language. Each agent shows its key finding, and on budget re-plans shows *"Over by $300. Asking the team for cheaper options (round 2 of 3)"*.
+  - The finished day-by-day itinerary.
+  - No timings, store names or model settings.
+- **Under the Hood** (developers):
+  - **Timeline:** every session and scratchpad operation of the run, plus agent start/finish and blackboard waits.
+  - **Store panels:** the session (state + ADK events) and the shared scratchpad (value, writer, version, round, readers), shown **as they were at the selected step**.
+  - **Controls:** Prev/Next, Replay and Live.
+  - **Step detail:** the store's physical command, round trips, bytes and duration for that operation.
+  - **Raw store contents:** a raw read of the keys or rows the run left behind (`/api/inspect/{run_id}`).
+  - **Store switch:** Valkey / PostgreSQL for the next run.
+
+URL hooks for demos: `?tab=hood`, `?backend=postgres`, `?autorun=1`.
+
+## Benchmarks (shell only)
+
+The UI runs no benchmarks. All of these use the scripted model, so they make no API calls:
+
+| Script | What it measures |
+|---|---|
+| `scripts/bench.sh` | Single session, interleaved A/B (Valkey vs Postgres) with warm-ups discarded and a bootstrap CI, then the 1/10/100 writes-per-step sweep. Wraps `scripts/bench.py` (`bench`, `sweep`, `probe`). |
+| `scripts/load_campaign.sh` | Concurrent users (below), with recorded Gemini latency replayed. |
+| `scripts/calibrate_llm.py` | Records real Gemini latency for the replay (makes API calls). |
 
 ## Load testing without spending API quota
 
@@ -82,10 +104,12 @@ Caveats:
 
 ```
 app/agents/     swarm, prompts, scratchpad coordination, day planner
-app/state/      Valkey / Postgres session services and scratchpads, backend registry
+app/state/      Valkey / Postgres session services and scratchpads, backend registry,
+                inspector (store layout + raw snapshot for Under the Hood)
 app/bench/      interleaved benchmark, sweeps, concurrent-user load test
 app/llm/        fake model with latency replay, latency model, Gemini probe
-app/telemetry/  per-op instrumentation, JSONL op log
-scripts/        calibration, load test drivers
+app/telemetry/  per-op instrumentation, JSONL op log, live state feed for the UI
+app/static/     the two-tab UI (DOM APIs only, strict CSP)
+scripts/        benchmarks, calibration, load test drivers
 results/        committed benchmark data and latency trace
 ```
