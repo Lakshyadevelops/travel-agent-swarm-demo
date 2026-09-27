@@ -32,15 +32,16 @@ class Settings:
     )
     llm_mode: str = field(default_factory=lambda: os.getenv("LLM_MODE", "fake"))
 
+    # The compose file publishes every store on 127.0.0.1 only.
     valkey_url: str = field(
-        default_factory=lambda: os.getenv("VALKEY_URL", "redis://localhost:6379")
+        default_factory=lambda: os.getenv("VALKEY_URL", "redis://127.0.0.1:6379")
     )
     valkey_cache_url: str = field(
-        default_factory=lambda: os.getenv("VALKEY_CACHE_URL", "redis://localhost:6380")
+        default_factory=lambda: os.getenv("VALKEY_CACHE_URL", "redis://127.0.0.1:6380")
     )
     postgres_dsn: str = field(
         default_factory=lambda: os.getenv(
-            "POSTGRES_DSN", "postgresql://swarm:swarm@localhost:5432/swarm"
+            "POSTGRES_DSN", "postgresql://swarm:swarm@127.0.0.1:5432/swarm"
         )
     )
 

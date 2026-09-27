@@ -24,7 +24,8 @@ services:
     # developer sets this; it also makes `evicted_keys` observable, which we
     # surface in the UI as a risk rather than hiding.
     command: ["valkey-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
-    ports: ["6379:6379"]
+    # Loopback only: stock Valkey has no auth, so it must not face the network.
+    ports: ["127.0.0.1:6379:6379"]
     <<: *caps
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -40,11 +41,14 @@ services:
     command: ["postgres", "-c", "max_connections=50"]
     environment:
       POSTGRES_USER: swarm
-      POSTGRES_PASSWORD: swarm
+      # Local development credential; the port below is loopback only. Set
+      # POSTGRES_PASSWORD in .env to override, and POSTGRES_DSN to match. It only
+      # takes effect when the data directory is first initialised.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swarm}
       POSTGRES_DB: swarm
     volumes:
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     <<: *caps
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U swarm"]
@@ -57,7 +61,7 @@ services:
   valkey-cache:
     image: valkey/valkey:9.1-alpine
     command: ["valkey-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
-    ports: ["6380:6379"]
+    ports: ["127.0.0.1:6380:6379"]
     <<: *caps
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
