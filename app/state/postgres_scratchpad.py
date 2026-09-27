@@ -56,6 +56,21 @@ _SWEEP_SQL = "DELETE FROM scratchpad WHERE expires_at IS NOT NULL AND expires_at
 class PostgresScratchpad:
     backend = "postgres"
 
+    # What each logical op physically does. Shown next to each step in the
+    # Under the Hood tab.
+    PRIMITIVES = {
+        "scratch_write": "INSERT INTO scratchpad (run_id, field, value, expires_at) "
+                         "VALUES ($1, $2, $3::jsonb, now() + ttl) "
+                         "ON CONFLICT (run_id, field) DO UPDATE (1 statement)",
+        "scratch_write_many": "INSERT INTO scratchpad ... SELECT FROM unnest($2::text[], "
+                              "$3::text[]) ON CONFLICT DO UPDATE (1 statement)",
+        "scratch_read": "SELECT value FROM scratchpad WHERE run_id = $1 AND field = $2 "
+                        "AND expires_at > now()",
+        "scratch_read_all": "SELECT field, value FROM scratchpad WHERE run_id = $1 "
+                            "AND expires_at > now()",
+        "scratch_delete": "DELETE FROM scratchpad WHERE run_id = $1",
+    }
+
     def __init__(
         self,
         pool: asyncpg.Pool,
@@ -73,6 +88,7 @@ class PostgresScratchpad:
         async with timed("scratch_write", self.backend, f"scratch:{run_id}") as box:
             box.payload_bytes = len(blob)
             box.round_trips = 1
+            box.field, box.value = field, value
             async with self._sem:
                 await self._pool.execute(_WRITE_SQL, run_id, field, blob, self._ttl)
 
@@ -84,11 +100,13 @@ class PostgresScratchpad:
         async with timed("scratch_write_many", self.backend, f"scratch:{run_id}") as box:
             box.payload_bytes = sum(len(b) for b in blobs)
             box.round_trips = 1  # one unnest upsert, NOT executemany
+            box.value = values
             async with self._sem:
                 await self._pool.execute(_WRITE_MANY_SQL, run_id, fields, blobs, self._ttl)
 
     async def read(self, run_id: str, field: str) -> Any | None:
         async with timed("scratch_read", self.backend, f"scratch:{run_id}") as box:
+            box.field = field
             async with self._sem:
                 row = await self._pool.fetchval(_READ_SQL, run_id, field)
             box.payload_bytes = len(row) if row else 0
@@ -99,6 +117,7 @@ class PostgresScratchpad:
             async with self._sem:
                 rows = await self._pool.fetch(_READ_ALL_SQL, run_id)
             box.payload_bytes = sum(len(r["value"]) for r in rows)
+            box.value = lambda: [r["field"] for r in rows]  # field names, UI runs only
         return {r["field"]: orjson.loads(r["value"]) for r in rows}
 
     async def delete(self, run_id: str) -> None:

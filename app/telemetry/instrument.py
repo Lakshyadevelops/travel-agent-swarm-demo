@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from app.telemetry.metrics import RunTelemetry, StateOp
 from app.telemetry.oplog import OpLog
@@ -25,12 +25,24 @@ CURRENT_ITERATION: ContextVar[int] = ContextVar("current_iteration", default=-1)
 class OpBox:
     """Mutable handle letting the wrapped block report op details back."""
 
-    __slots__ = ("payload_bytes", "round_trips", "cache_hit")
+    __slots__ = ("payload_bytes", "round_trips", "cache_hit", "field", "value")
 
     def __init__(self) -> None:
         self.payload_bytes: int = 0
         self.round_trips: int = 1
         self.cache_hit: bool | None = None
+        # For the Under the Hood inspector only. Stores set these by reference;
+        # nothing is serialized unless a listener is bound for the run.
+        self.field: str | None = None
+        self.value: Any = None
+
+
+# Receives every recorded op of the current run. Only UI runs bind one (see
+# app/telemetry/feed.py); benchmarks and load tests leave it unset and pay one
+# contextvar lookup per op.
+CURRENT_OP_LISTENER: ContextVar[Callable[[StateOp, OpBox], None] | None] = ContextVar(
+    "current_op_listener", default=None
+)
 
 
 @asynccontextmanager
@@ -72,3 +84,9 @@ async def timed(
         oplog = CURRENT_OPLOG.get()
         if oplog is not None:
             oplog.submit(op)
+        listener = CURRENT_OP_LISTENER.get()
+        if listener is not None:
+            try:
+                listener(op, box)
+            except Exception:  # noqa: BLE001 - the inspector must never break a run
+                pass

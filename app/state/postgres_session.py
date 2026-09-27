@@ -81,6 +81,20 @@ DELETE FROM adk_sessions
 class PostgresSessionService(BaseSessionService):
     backend = "postgres"
 
+    # What each logical op physically does. Shown next to each step in the
+    # Under the Hood tab.
+    PRIMITIVES = {
+        "session_create": "INSERT INTO adk_sessions (app_name, user_id, session_id, state, "
+                          "last_update_time) VALUES (...) ON CONFLICT DO UPDATE (1 statement)",
+        "session_get": "WITH s AS (SELECT state FROM adk_sessions ...), e AS (SELECT "
+                       "jsonb_agg(payload ORDER BY ts) FROM adk_events ...) SELECT ... "
+                       "(1 statement)",
+        "session_append": "WITH ev AS (INSERT INTO adk_events ... payload::jsonb) "
+                          "UPDATE adk_sessions SET state = $8::jsonb (1 statement)",
+        "session_list": "SELECT session_id FROM adk_sessions WHERE app_name = $1",
+        "session_delete": "WITH d AS (DELETE FROM adk_events ...) DELETE FROM adk_sessions ...",
+    }
+
     def __init__(
         self,
         pool: asyncpg.Pool,
@@ -108,6 +122,7 @@ class PostgresSessionService(BaseSessionService):
             "session_create", self.backend, f"sess:{app_name}:{user_id}:{sid}"
         ) as box:
             box.payload_bytes = len(blob)
+            box.value = state
             async with self._sem:
                 await self._pool.execute(_CREATE_SQL, app_name, user_id, sid, blob, now)
 
@@ -147,6 +162,9 @@ class PostgresSessionService(BaseSessionService):
             if row is None:
                 return None
             box.payload_bytes = len(row["events"])
+            # Lazy: evaluated only by the UI listener, after timing has stopped,
+            # so the measured region stays exactly as before.
+            box.value = lambda: {"events_loaded": len(orjson.loads(row["events"]))}
 
         events_json = orjson.loads(row["events"])
         return Session(
@@ -202,6 +220,7 @@ class PostgresSessionService(BaseSessionService):
         ) as box:
             box.payload_bytes = len(payload) + len(state_blob)
             box.round_trips = 1  # single CTE, not BEGIN/INSERT/UPDATE/COMMIT
+            box.value = event
             async with self._sem:
                 await self._pool.execute(
                     _APPEND_SQL,

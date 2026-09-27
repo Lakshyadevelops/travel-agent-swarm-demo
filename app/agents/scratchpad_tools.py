@@ -51,16 +51,18 @@ def _emit(action: str, field: str, detail: str = "", **extra: Any) -> None:
     sink = STEP_SINK.get()
     if sink is None:
         return
+    coord = CURRENT_COORD.get()
     try:
         sink.put_nowait({  # type: ignore[attr-defined]
             "type": "blackboard", "agent": CURRENT_AGENT.get(), "action": action,
-            "field": field, "detail": detail, **extra,
+            "field": field, "detail": detail,
+            "round": coord.round if coord is not None else 0, **extra,
         })
     except Exception:  # noqa: BLE001 - UI streaming must never break a run
         pass
 
 
-async def _publish(field: str, value: Any, detail: str = "") -> None:
+async def _publish(field: str, value: Any, detail: str = "", **extra: Any) -> None:
     """Write a finding to the blackboard, then signal any waiting peers."""
     pad = CURRENT_SCRATCHPAD.get()
     if pad is not None:
@@ -75,7 +77,7 @@ async def _publish(field: str, value: Any, detail: str = "") -> None:
     coord = CURRENT_COORD.get()
     if coord is not None:
         coord.announce(field, CURRENT_AGENT.get())
-    _emit("wrote", field, detail)
+    _emit("wrote", field, detail, **extra)
 
 
 async def _consume(field: str) -> Any | None:
@@ -93,10 +95,12 @@ async def _await_field(field: str) -> Any | None:
         ok, waited = await coord.wait_for(field, CURRENT_AGENT.get())
         if not ok:
             _emit("timed_out", field, "peer did not publish in time; using latest value")
-    value = await _consume(field)
-    _emit("read", field, f"waited {waited:.0f} ms" if waited >= 1 else "",
-          waited_ms=round(waited, 1))
-    return value
+    # The read itself is streamed as a state_op; only a real wait is a signal
+    # worth showing.
+    if waited >= 1:
+        _emit("waited", field, f"waited {waited:.0f} ms for a peer to publish",
+              waited_ms=round(waited, 1))
+    return await _consume(field)
 
 
 def _brief() -> dict[str, Any]:
@@ -128,7 +132,7 @@ async def intake_tool() -> dict:
     }
     interests = ", ".join(prefs["interests"]) or "general sightseeing"
     await _publish("trip_constraints", constraints,
-                   f"pace {prefs['pace']}/day · interests: {interests}")
+                   f"up to {prefs['pace']} stops a day · {interests}")
     return constraints
 
 
@@ -374,15 +378,25 @@ async def budget_tool(tool_context: ToolContext) -> dict:
         "inputs_from": ["transit: transit_plan", "stay: stay_plan",
                         "scout: destination_shortlist (priced day by day)"],
     }
-    await _publish("budget_verdict", verdict,
-                   f"${total:,.0f} of ${ceiling:,.0f} · " + ("OK" if within else "over"))
+    if ceiling <= 0:
+        verdict_detail = f"${total:,.0f} total"
+    elif within:
+        verdict_detail = f"${total:,.0f} total · within your ${ceiling:,.0f} budget"
+    else:
+        verdict_detail = (f"${total:,.0f} total · ${overage:,.0f} over your "
+                          f"${ceiling:,.0f} budget")
+    await _publish("budget_verdict", verdict, verdict_detail,
+                   within_budget=within, total_usd=total, ceiling_usd=ceiling,
+                   overage_usd=overage)
 
     if directive is not None:
         # Bump the round first so the specialists' round-2 waits cannot be
         # satisfied by round-1 publications.
         if coord is not None:
             coord.next_round()
-        await _publish("budget_directive", directive, guidance)
+        await _publish("budget_directive", directive, guidance,
+                       overage_usd=overage,
+                       max_rounds=coord.max_rounds if coord is not None else 1)
 
     # Breaking the LoopAgent is the guardrail's decision, not the model's.
     if within or exhausted:

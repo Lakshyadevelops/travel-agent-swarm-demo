@@ -23,8 +23,10 @@ from app.agents.swarm import PLAN_LOOP_MAX_ROUNDS, build_swarm
 from app.config import settings
 from app.providers.tools import PROVIDER_LATENCY_MS
 from app.state.registry import backends
+from app.telemetry.feed import StateFeed
 from app.telemetry.instrument import (
     CURRENT_ITERATION,
+    CURRENT_OP_LISTENER,
     CURRENT_OPLOG,
     CURRENT_RUN,
     CURRENT_VARIANT,
@@ -59,6 +61,22 @@ def brief_to_prompt(brief: dict[str, Any]) -> str:
     if brief.get("nuance"):
         parts.append(f"Preferences: {brief['nuance']}")
     return "\n".join(parts)
+
+
+def reply_text(event: Any) -> str:
+    """The visible reply in an ADK event, or "" if it carries none.
+
+    Gemini can split one reply across several contiguous text parts (the tail
+    part carries the thought signature), so they are joined without a separator,
+    as google-genai's ``response.text`` does. Thought summaries are skipped.
+    """
+    if not (event.content and event.content.parts):
+        return ""
+    return "".join(
+        part.text
+        for part in event.content.parts
+        if getattr(part, "text", None) and not getattr(part, "thought", False)
+    )
 
 
 async def run_swarm(
@@ -116,6 +134,12 @@ async def run_swarm(
     coord = Coordinator(wait_timeout_s=60.0 if mode == "gemini" else 10.0,
                         max_rounds=PLAN_LOOP_MAX_ROUNDS)
     CURRENT_COORD.set(coord)
+    # UI runs stream every state op, with its value, to the Under the Hood tab.
+    # Benchmarks and load tests pass no queue, so they bind nothing. Bound before
+    # create_session so session creation is streamed too.
+    CURRENT_OP_LISTENER.set(
+        StateFeed(step_queue, lambda: coord.round) if step_queue is not None else None
+    )
 
     scratchpad = backends.scratchpad(backend_id)
     session_service = backends.session_service(backend_id)
@@ -130,7 +154,7 @@ async def run_swarm(
 
     await session_service.create_session(
         app_name=settings.app_name,
-        user_id="demo-user",
+        user_id=settings.demo_user_id,
         session_id=run_id,
         state={"brief": brief},
     )
@@ -144,12 +168,12 @@ async def run_swarm(
     final_text = ""
     try:
         async for event in runner.run_async(
-            user_id="demo-user", session_id=run_id, new_message=message
+            user_id=settings.demo_user_id, session_id=run_id, new_message=message
         ):
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    if getattr(part, "text", None):
-                        final_text = part.text
+            # The last event with a visible reply is the supervisor's summary.
+            text = reply_text(event)
+            if text:
+                final_text = text
     finally:
         telemetry.wall_clock_ms = (time.perf_counter() - started) * 1000.0
 

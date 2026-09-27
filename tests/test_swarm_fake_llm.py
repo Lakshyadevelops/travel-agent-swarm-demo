@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from google.adk.events import Event
+from google.genai import types
 
-from app.agents.orchestrator import run_swarm
+from app.agents.orchestrator import reply_text, run_swarm
 from tests.conftest import ARMS, BRIEF
 
 EXPECTED_AGENTS = {
@@ -94,3 +96,20 @@ async def test_write_amplification_scales_op_count(writes):
         assert r["ops_total"] > baseline["ops_total"], (
             "write amplification had no effect on op count"
         )
+
+
+def test_reply_text_joins_split_parts():
+    """Gemini 3.x splits one reply across text parts; the summary must stay whole."""
+    event = Event(
+        author="supervisor_final",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(text="Planning notes.", thought=True),
+                types.Part(text="Your trip comes to $2,191.14"),
+                types.Part(text=". That is inside your $4,000 budget."),
+            ],
+        ),
+    )
+    assert reply_text(event) == "Your trip comes to $2,191.14. That is inside your $4,000 budget."
+    assert reply_text(Event(author="stay_agent")) == ""

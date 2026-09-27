@@ -67,7 +67,7 @@ AGENT_SPECS = {
     ),
     "supervisor_final": (
         "Supervisor · finalize", prompts.SUPERVISOR_FINAL, None,
-        "Your trip is planned and within the numbers you gave me.",
+        "Your trip plan is ready.",
     ),
 }
 

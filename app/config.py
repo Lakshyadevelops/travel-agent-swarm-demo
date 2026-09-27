@@ -72,6 +72,9 @@ class Settings:
     postgres_pool_max: int = field(default_factory=lambda: _int("POSTGRES_POOL_MAX", 16))
 
     app_name: str = "travel_swarm"
+    # Every run belongs to this user: the demo has no accounts.
+    # TODO(security): real per-user ids once authentication exists.
+    demo_user_id: str = "demo-user"
 
 
 settings = Settings()

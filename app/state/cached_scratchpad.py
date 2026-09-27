@@ -28,6 +28,18 @@ from app.telemetry.instrument import timed
 class CachedScratchpad:
     backend = "postgres_cached"
 
+    PRIMITIVES = {
+        "scratch_write": "Postgres upsert (durable) then HSET cache:scratch:<run> + EXPIRE "
+                         "(2 round trips)",
+        "scratch_write_many": "Postgres unnest upsert then HSET cache:scratch:<run> + EXPIRE "
+                              "(2 round trips)",
+        "scratch_read": "HGET cache:scratch:<run> <field>; on miss SELECT from Postgres "
+                        "and repopulate",
+        "scratch_read_all": "HGETALL cache:scratch:<run>; on miss SELECT from Postgres "
+                            "and repopulate",
+        "scratch_delete": "DELETE FROM scratchpad + DEL cache:scratch:<run>",
+    }
+
     def __init__(
         self,
         origin: PostgresScratchpad,
@@ -50,6 +62,7 @@ class CachedScratchpad:
         async with timed("scratch_write", self.backend, key) as box:
             box.payload_bytes = len(blob)
             box.round_trips = 2  # durable origin write + cache refresh
+            box.field, box.value = field, value
             # Origin first: a crash between the two must never leave the cache
             # advertising data that was never durably committed.
             await self._origin.write_raw(run_id, field, blob.decode())
@@ -67,6 +80,7 @@ class CachedScratchpad:
         async with timed("scratch_write_many", self.backend, key) as box:
             box.payload_bytes = sum(len(v) for v in mapping.values())
             box.round_trips = 2
+            box.value = values
             await self._origin.write_many_raw(
                 run_id, list(mapping.keys()), [v.decode() for v in mapping.values()]
             )
@@ -79,6 +93,7 @@ class CachedScratchpad:
     async def read(self, run_id: str, field: str) -> Any | None:
         key = self._key(run_id)
         async with timed("scratch_read", self.backend, key) as box:
+            box.field = field
             async with self._sem:
                 raw = await self._cache.hget(key, field)
             if raw is not None:
@@ -107,6 +122,7 @@ class CachedScratchpad:
             if raw:
                 box.cache_hit = True
                 box.payload_bytes = sum(len(v) for v in raw.values())
+                box.value = raw  # the inspector lists the field names
                 return {
                     (k.decode() if isinstance(k, bytes) else k): orjson.loads(v)
                     for k, v in raw.items()
@@ -122,6 +138,7 @@ class CachedScratchpad:
                     pipe.expire(key, self._ttl)
                     await pipe.execute()
                 box.payload_bytes = sum(len(v) for v in rows.values())
+            box.value = rows
             return {k: orjson.loads(v) for k, v in rows.items()}
 
     async def delete(self, run_id: str) -> None:

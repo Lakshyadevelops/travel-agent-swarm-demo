@@ -302,6 +302,24 @@ def supported_destinations() -> list[str]:
     return [v["display"] for v in DESTINATIONS.values()]
 
 
+def match_destination(name: str) -> str | None:
+    """Catalog display name for `name`, or None if the catalog doesn't cover it.
+
+    Same matching as resolve_destination() minus the silent default, so the API
+    can reject an unsupported city instead of quietly planning a different one.
+    Substring matches need 3+ characters so "a" doesn't match "Paris".
+    """
+    key = (name or "").strip().lower()
+    key = _ALIASES.get(key, key)
+    if key in DESTINATIONS:
+        return DESTINATIONS[key]["display"]
+    if len(key) >= 3:
+        for k, v in DESTINATIONS.items():
+            if k in key or key in k:
+                return v["display"]
+    return None
+
+
 def _nth_sunday(year: int, month: int, n: int) -> date:
     """n-th Sunday of a month; n=-1 means last."""
     if n > 0:

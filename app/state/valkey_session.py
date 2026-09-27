@@ -28,6 +28,18 @@ from app.telemetry.instrument import timed
 class ValkeySessionService(BaseSessionService):
     backend = "valkey"
 
+    # What each logical op physically does. Shown next to each step in the
+    # Under the Hood tab.
+    PRIMITIVES = {
+        "session_create": "HSET sess:<app>:<user>:<sid> state <json> last_update_time <ts> "
+                          "+ SADD sessidx:<app>:<user> <sid> (pipelined, 1 round trip)",
+        "session_get": "HGETALL sess:<...> + ZRANGE evt:<...> 0 -1 (pipelined, 1 round trip)",
+        "session_append": "ZADD evt:<...> <event.timestamp> <event json> + HSET sess:<...> "
+                          "state <json> (pipelined, 1 round trip)",
+        "session_list": "SMEMBERS sessidx:<app>:<user>",
+        "session_delete": "DEL sess:<...> evt:<...> + SREM sessidx:<app>:<user> <sid>",
+    }
+
     def __init__(
         self,
         client: redis.Redis,
@@ -68,6 +80,7 @@ class ValkeySessionService(BaseSessionService):
 
         async with timed("session_create", self.backend, key) as box:
             box.payload_bytes = len(blob)
+            box.value = state
             async with self._sem:
                 pipe = self._client.pipeline(transaction=False)
                 pipe.hset(key, mapping={"state": blob, "last_update_time": str(now)})
@@ -115,6 +128,7 @@ class ValkeySessionService(BaseSessionService):
             if not meta:
                 return None
             box.payload_bytes = sum(len(e) for e in raw_events)
+            box.value = {"events_loaded": len(raw_events)}
 
         if config and config.num_recent_events == 0:
             raw_events = []
@@ -181,6 +195,7 @@ class ValkeySessionService(BaseSessionService):
 
         async with timed("session_append", self.backend, skey) as box:
             box.payload_bytes = len(payload) + len(state_blob)
+            box.value = event
             async with self._sem:
                 pipe = self._client.pipeline(transaction=False)
                 pipe.zadd(ekey, {payload: event.timestamp})

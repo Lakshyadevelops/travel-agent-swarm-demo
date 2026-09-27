@@ -17,6 +17,18 @@ from app.telemetry.instrument import timed
 class ValkeyScratchpad:
     backend = "valkey"
 
+    # What each logical op physically does. Shown next to each step in the
+    # Under the Hood tab.
+    PRIMITIVES = {
+        "scratch_write": "HSET scratch:<run> <field> <json> + EXPIRE scratch:<run> <ttl> "
+                         "(pipelined, 1 round trip)",
+        "scratch_write_many": "HSET scratch:<run> <f1> <v1> <f2> <v2> ... + EXPIRE "
+                              "(pipelined, 1 round trip)",
+        "scratch_read": "HGET scratch:<run> <field>",
+        "scratch_read_all": "HGETALL scratch:<run>",
+        "scratch_delete": "DEL scratch:<run>",
+    }
+
     def __init__(
         self,
         client: redis.Redis,
@@ -38,6 +50,7 @@ class ValkeyScratchpad:
         blob = orjson.dumps(value)
         async with timed("scratch_write", self.backend, key) as box:
             box.payload_bytes = len(blob)
+            box.field, box.value = field, value
             async with self._sem:
                 pipe = self._client.pipeline(transaction=False)
                 pipe.hset(key, field, blob)
@@ -51,6 +64,7 @@ class ValkeyScratchpad:
         mapping = {f: orjson.dumps(v) for f, v in values.items()}
         async with timed("scratch_write_many", self.backend, key) as box:
             box.payload_bytes = sum(len(v) for v in mapping.values())
+            box.value = values
             async with self._sem:
                 pipe = self._client.pipeline(transaction=False)
                 pipe.hset(key, mapping=mapping)
@@ -60,6 +74,7 @@ class ValkeyScratchpad:
     async def read(self, run_id: str, field: str) -> Any | None:
         key = self._key(run_id)
         async with timed("scratch_read", self.backend, key) as box:
+            box.field = field
             async with self._sem:
                 raw = await self._client.hget(key, field)
             box.payload_bytes = len(raw) if raw else 0
@@ -71,6 +86,7 @@ class ValkeyScratchpad:
             async with self._sem:
                 raw = await self._client.hgetall(key)
             box.payload_bytes = sum(len(v) for v in raw.values())
+            box.value = raw  # the inspector lists the field names
         return {
             (k.decode() if isinstance(k, bytes) else k): orjson.loads(v)
             for k, v in raw.items()

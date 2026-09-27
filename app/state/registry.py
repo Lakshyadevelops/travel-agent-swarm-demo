@@ -1,16 +1,18 @@
 """Backend registry.
 
 Arms are registry entries, not a boolean. Adding `postgres_sync_off` or a future
-arm is a dict entry -- the UI selector, benchmark runner and sweeps all enumerate
-this registry, so nothing downstream hardcodes "valkey or postgres".
+arm is a dict entry -- the benchmark runner and sweeps enumerate this registry,
+so nothing downstream hardcodes "valkey or postgres". The UI offers the subset
+in UI_STORES.
 
 Clients are built once at startup and shared for process lifetime so the UI's
-live toggle never pays connection-setup cost mid-run and pools never leak.
+store switch never pays connection-setup cost mid-run and pools never leak.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,12 +28,14 @@ from app.state.postgres_session import PostgresSessionService
 from app.state.valkey_scratchpad import ValkeyScratchpad
 from app.state.valkey_session import ValkeySessionService
 
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class BackendSpec:
     id: str
     label: str
-    notes: str          # rendered verbatim in the UI methodology panel
+    notes: str          # printed by scripts/bench.py and stored in results.json
     is_durable: bool
 
 
@@ -167,8 +171,8 @@ class BackendManager:
         """Valkey eviction count.
 
         Non-zero means results are not comparable across arms AND flags a real
-        operational hazard of the cache approach, so it is surfaced in the UI
-        rather than quietly ignored.
+        operational hazard of the cache approach, so benchmarks record it
+        rather than quietly ignoring it.
         """
         client = self._valkey if backend_id == "valkey" else self._valkey_cache
         if client is None or backend_id in ("postgres", "postgres_sync_off"):
@@ -179,24 +183,36 @@ class BackendManager:
         except Exception:  # noqa: BLE001 - diagnostics must never break a run
             return 0
 
+    # ---- raw clients for the inspector ------------------------------
+    # /api/inspect reads through these directly, bypassing timed(), so looking
+    # at a run never adds operations to any run's telemetry.
+    def raw_valkey(self) -> redis.Redis:
+        return self._valkey
+
+    def raw_pg_pool(self, backend_id: str) -> asyncpg.Pool:
+        return self._pg_pool_sync_off if backend_id == "postgres_sync_off" else self._pg_pool
+
     async def health(self) -> dict[str, Any]:
+        # "ok" / "down" only: exception text can carry hosts and credentials,
+        # so details go to the server log, never to the client.
         out: dict[str, Any] = {}
-        try:
-            await self._valkey.ping()
-            out["valkey"] = "ok"
-        except Exception as exc:  # noqa: BLE001
-            out["valkey"] = f"error: {exc}"
-        try:
-            await self._valkey_cache.ping()
-            out["valkey_cache"] = "ok"
-        except Exception as exc:  # noqa: BLE001
-            out["valkey_cache"] = f"error: {exc}"
-        try:
-            await self._pg_pool.fetchval("SELECT 1;")
-            out["postgres"] = "ok"
-        except Exception as exc:  # noqa: BLE001
-            out["postgres"] = f"error: {exc}"
+        checks = {
+            "valkey": lambda: self._valkey.ping(),
+            "valkey_cache": lambda: self._valkey_cache.ping(),
+            "postgres": lambda: self._pg_pool.fetchval("SELECT 1;"),
+        }
+        for name, check in checks.items():
+            try:
+                await check()
+                out[name] = "ok"
+            except Exception as exc:  # noqa: BLE001
+                log.warning("health check failed for %s: %s", name, exc)
+                out[name] = "down"
         return out
 
+
+# Stores the UI offers. The cache and sync_off arms stay available to scripts
+# (scripts/bench.py --arms ...) but are not part of the demo.
+UI_STORES: tuple[str, ...] = ("valkey", "postgres")
 
 backends = BackendManager()
