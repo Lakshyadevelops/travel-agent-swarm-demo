@@ -272,6 +272,41 @@ main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 56px; }
 .why-plan ul { margin: 8px 0 0; padding-left: 18px; }
 .why-plan li { margin-bottom: 4px; }
 
+.tailored {
+  background: var(--ok-soft);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin: 0 0 16px;
+}
+.tailored h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ok);
+  margin-bottom: 6px;
+}
+.tailored .note { font-style: italic; margin-bottom: 4px; overflow-wrap: anywhere; }
+.tailored .heard { color: var(--muted); font-size: 13px; }
+.tailored ul { margin: 6px 0 0; padding-left: 18px; }
+.tailored li { margin-bottom: 3px; }
+.tailored .day-ref { color: var(--muted); }
+.tailored .added,
+.for-you {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--surface);
+  border: 1px solid rgba(19, 115, 51, 0.25);
+  border-radius: 999px;
+  padding: 0 8px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.for-you { margin: 2px 0 0; background: var(--ok-soft); border-color: transparent; }
+.tailored .skipped, .tailored .unmet { font-size: 13px; margin: 8px 0 0; }
+.tailored .unmet { color: var(--warn); }
+
 .days { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
 .day {
   background: var(--surface);

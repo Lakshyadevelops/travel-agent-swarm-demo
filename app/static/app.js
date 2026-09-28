@@ -775,6 +775,7 @@ function renderItinerary(run) {
           `This plan is ${money(overage)} over your ${money(b.budget_total)} budget, even with the ` +
             "cheapest options we found. A shorter trip or a higher budget would bring it within reach.",
         ),
+    tailoredSection(it.tailored),
     it.summary ? h("p", { class: "season" }, it.summary) : null,
     whyThisPlan(it),
     h("div", { class: "days" }, (it.days || []).map(dayCard)),
@@ -836,6 +837,59 @@ function whyThisPlan(it) {
   return h("details", { class: "why-plan", open: true }, h("summary", {}, "Why this plan"), h("ul", {}, items));
 }
 
+/** How the "Anything else we should know?" note shaped the plan. */
+function tailoredSection(t) {
+  if (!t || !t.note) return null;
+  const list = (v) => (Array.isArray(v) ? v : []);
+
+  const heard = [];
+  if (t.pace_label && t.pace_label !== "balanced") heard.push(`${capitalize(t.pace_label)} pace`);
+  if (list(t.interests).length) heard.push(`into ${list(t.interests).join(", ")}`);
+  if (list(t.wishes).length) heard.push(`wishes: ${list(t.wishes).join(", ")}`);
+  if (list(t.avoid).length) heard.push(`skip ${list(t.avoid).join(", ")}`);
+  if (t.early_ok === false) heard.push("no early starts");
+
+  // One line per wish or interest, listing the places that answer it.
+  const groups = new Map();
+  for (const x of list(t.for_you)) {
+    if (!groups.has(x.reason)) groups.set(x.reason, []);
+    groups.get(x.reason).push(x);
+  }
+  const answered = [...groups].map(([reason, places]) =>
+    h(
+      "li",
+      {},
+      h("strong", {}, capitalize(String(reason))),
+      " → ",
+      places.map((p, k) => [
+        k ? ", " : "",
+        p.name,
+        h("span", { class: "day-ref" }, ` (day ${p.day})`),
+        p.added ? h("span", { class: "added" }, "added for you") : null,
+      ]),
+    ),
+  );
+  const skipped = list(t.skipped);
+  const unmet = list(t.unmet);
+
+  return h(
+    "section",
+    { class: "tailored" },
+    h("h3", {}, "Tailored to your note"),
+    h("p", { class: "note" }, `“${t.note}”`),
+    heard.length ? h("p", { class: "heard" }, "What we heard: " + heard.join(" · ")) : null,
+    answered.length
+      ? h("ul", {}, answered)
+      : h("p", { class: "heard" }, "Nothing in this plan was picked specifically for your note."),
+    skipped.length
+      ? h("p", { class: "skipped" }, "Left out: " + skipped.map((s) => `${s.name} (${s.reason})`).join("; "))
+      : null,
+    unmet.length
+      ? h("p", { class: "unmet" }, "Couldn't include: " + unmet.map((u) => `${u.what} (${u.reason})`).join("; "))
+      : null,
+  );
+}
+
 function legEl(leg, to) {
   if (!leg) return null;
   const bits = [leg.mode, `${Number(leg.distance_km || 0).toFixed(1)} km`, `${leg.minutes} min`];
@@ -890,6 +944,17 @@ function itemEls(i) {
           h("strong", {}, `${TIME_ICON[i.best_time] || ""} ${i.name}`.trim()),
           i.cost_usd ? h("span", { class: "cost" }, money(i.cost_usd)) : null,
         ),
+        i.for_you
+          ? h(
+              "div",
+              {},
+              h(
+                "span",
+                { class: "for-you" },
+                `${i.added_by === "scout" ? "Added for you" : "For you"} · ${i.for_you}`,
+              ),
+            )
+          : null,
         h("div", { class: "why" }, why + (i.wait_min > 20 ? ` · ${i.wait_min} min free before` : "")),
         i.tip ? h("div", { class: "tip" }, i.tip) : null,
       ),

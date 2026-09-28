@@ -5,8 +5,9 @@ scratchpad, and reads what its peers published. That traffic is the workload
 being measured, and it is also genuine collaboration: every specialist's output
 depends on what another specialist found.
 
-    supervisor_intake --trip_constraints--> scout
-    scout  --destination_shortlist (POIs + base_area)--> stay, transit, budget
+    supervisor_intake --trip_constraints (incl. reading of the note)--> scout
+    scout  --destination_shortlist (POIs + places added for wishes, base_area,
+             the note's reading)--> stay, transit, budget, itinerary
     stay   --stay_plan (hotel chosen near scout's base)--> transit, budget
     transit--transit_plan (flight + airport->hotel transfer)--> budget
     budget --budget_directive (price caps)--> stay, transit   [next loop round]
@@ -29,7 +30,15 @@ from typing import Any
 from google.adk.tools import ToolContext
 
 from app.agents.blackboard import CURRENT_COORD
-from app.agents.planner import parse_preferences, plan_days
+from app.agents.planner import plan_days
+from app.agents.preferences import (
+    Tailoring,
+    clean_extra_places,
+    describe,
+    merge_reading,
+    normalize_prefs,
+    parse_preferences,
+)
 from app.agents.runtime import (
     CURRENT_BRIEF,
     CURRENT_RUN_ID,
@@ -38,6 +47,9 @@ from app.agents.runtime import (
     STEP_SINK,
     WRITES_PER_STEP,
 )
+# Category, Pace and WishPlace appear in tool signatures: ADK resolves those
+# annotations to build the function declarations the model sees.
+from app.agents.schemas import Category, Pace, WishPlace
 from app.providers.geo import haversine_km, travel_leg
 from app.providers.tools import scout_destination, search_flights, search_stays
 from app.telemetry.instrument import CURRENT_AGENT
@@ -117,10 +129,29 @@ def _selected(plan: dict | None) -> dict | None:
 
 
 # --------------------------------------------------------------- supervisor
-async def intake_tool() -> dict:
-    """Parse the brief into structured constraints for the specialists."""
+async def intake_tool(
+    interests: list[Category] | None = None,
+    avoid: list[Category] | None = None,
+    pace: Pace | None = None,
+    early_starts_ok: bool | None = None,
+    wishes: list[str] | None = None,
+) -> dict:
+    """Post the brief, and your reading of the traveler's note, for the specialists.
+
+    Args:
+      interests: Categories the note asks for.
+      avoid: Categories the note rules out.
+      pace: How full the days should be, only if the note implies it.
+      early_starts_ok: False if they don't want early mornings or sunrise starts.
+      wishes: Up to 4 short phrases for specific things they want, beyond a
+        category, e.g. "hill trek" or "beach day".
+    """
     brief = _brief()
-    prefs = parse_preferences(brief.get("nuance", ""))
+    # Model-supplied: validated field by field, keywords fill whatever is missing.
+    prefs = merge_reading(
+        brief.get("nuance", ""), interests=interests, avoid=avoid, pace=pace,
+        early_starts_ok=early_starts_ok, wishes=wishes,
+    )
     constraints = {
         "destination": brief.get("destination", ""),
         "origin": brief.get("origin", ""),
@@ -130,37 +161,54 @@ async def intake_tool() -> dict:
         "budget_total": float(brief.get("budget_total", 0) or 0),
         **prefs,
     }
-    interests = ", ".join(prefs["interests"]) or "general sightseeing"
-    await _publish("trip_constraints", constraints,
-                   f"up to {prefs['pace']} stops a day · {interests}")
+    await _publish("trip_constraints", constraints, describe(prefs))
     return constraints
 
 
 # --------------------------------------------------------------- scout
-async def scout_tool() -> dict:
-    """Shortlist neighborhoods, must-see places and the best area to stay."""
+async def scout_tool(extra_places: list[WishPlace] | None = None) -> dict:
+    """Shortlist neighborhoods, must-see places and the best area to stay.
+
+    Args:
+      extra_places: Up to 3 real places in or near the destination for wishes or
+        interests the catalog does not cover. Leave empty when it covers them.
+    """
     brief = _brief()
     constraints = await _consume("trip_constraints") or {}
-    interests = set(constraints.get("interests", []))
+    prefs = normalize_prefs(constraints or parse_preferences(brief.get("nuance", "")))
+    tailor = Tailoring(prefs)
 
     result = await scout_destination(brief.get("destination", ""), CURRENT_SEED.get())
     payload = result.model_dump()
 
-    # Put the traveler's interests first; the planner fills days in this order.
-    payload["pois"].sort(key=lambda p: p["category"] not in interests)
-    payload["interest_matches"] = [p["name"] for p in payload["pois"]
-                                   if p["category"] in interests]
+    extras, rejected = clean_extra_places(
+        extra_places, catalog=payload["pois"],
+        centre=(payload["lat"], payload["lon"]), prefs=prefs,
+    )
+    # Wishes first, then interests; the planner fills days in this order.
+    payload["pois"] = sorted(extras + payload["pois"], key=tailor.tier)
+    payload["interest_matches"] = [p["name"] for p in payload["pois"] if tailor.tier(p) < 2]
+    payload["added_for_you"] = [{"name": p["name"], "for": p["for_you"]} for p in extras]
+    if rejected:
+        payload["rejected_suggestions"] = rejected
+    # The reading of the note rides along, so the budget guardrail and the
+    # itinerary plan with it without another store read.
+    payload["prefs"] = prefs
     payload["inputs_from"] = ["supervisor: trip_constraints"]
 
     base = payload["base_area"]["name"]
-    await _publish("destination_shortlist", payload,
-                   f"{len(payload['pois'])} places · recommends basing in {base}")
+    detail = f"{len(payload['pois'])} places · recommends basing in {base}"
+    if extras:
+        detail += f" · added {len(extras)} for you"
+    await _publish("destination_shortlist", payload, detail)
     return {
         "destination": payload["destination"],
         "recommended_base": base,
         "neighborhoods": [n["name"] for n in payload["neighborhoods"]],
         "places": [f"{p['name']} ({p['best_time']})" for p in payload["pois"]],
         "matched_interests": payload["interest_matches"],
+        "added_for_traveler": [f"{p['name']} (for {p['for_you']})" for p in extras],
+        "rejected_suggestions": [f"{r['name']}: {r['reason']}" for r in rejected],
     }
 
 
@@ -418,13 +466,22 @@ async def itinerary_tool() -> dict:
     transit = board.get("transit_plan", {}) or {}
     stay = board.get("stay_plan", {}) or {}
     verdict = board.get("budget_verdict", {}) or {}
-    constraints = board.get("trip_constraints", {}) or {}
 
     flight = _selected(transit)
     hotel = _selected(stay)
-    plan = plan_days(shortlist, hotel, flight, brief,
-                     prefs={k: constraints[k] for k in ("pace", "interests", "early_ok")
-                            if k in constraints} or None) if shortlist else {"days": []}
+    # Same inputs as the budget guardrail's call -- including the reading of
+    # the note carried in the shortlist -- so the totals match exactly.
+    plan = plan_days(shortlist, hotel, flight, brief) if shortlist else {"days": []}
+    tailored = plan.get("tailored") or {}
+
+    scout_line = f"Recommended basing in {(shortlist.get('base_area') or {}).get('name', '?')}"
+    added = shortlist.get("added_for_you") or []
+    if added:
+        scout_line += "; added " + ", ".join(f"{a['name']} (for {a['for']})" for a in added)
+    added_names = {a["name"] for a in added}
+    matched = [n for n in shortlist.get("interest_matches") or [] if n not in added_names]
+    if matched:
+        scout_line += f"; prioritised {', '.join(matched[:3])}"
 
     itinerary = {
         "destination": shortlist.get("destination", brief.get("destination", "")),
@@ -432,6 +489,7 @@ async def itinerary_tool() -> dict:
         "base_area": (shortlist.get("base_area") or {}).get("name"),
         "days": plan.get("days", []),
         "unscheduled": plan.get("unscheduled", []),
+        "tailored": tailored,
         "flight": flight,
         "stay": hotel,
         "arrival_transfer": transit.get("arrival_transfer"),
@@ -440,21 +498,33 @@ async def itinerary_tool() -> dict:
         "within_budget": verdict.get("within_budget", True),
         "budget_guidance": verdict.get("guidance", ""),
         "collaboration": {
-            "scout": f"Recommended basing in {(shortlist.get('base_area') or {}).get('name', '?')}"
-                     + (f"; prioritised {', '.join(shortlist.get('interest_matches', [])[:3])}"
-                        if shortlist.get("interest_matches") else ""),
+            "scout": scout_line,
             "stay": stay.get("rationale", ""),
             "transit": transit.get("rationale", ""),
             "budget": verdict.get("guidance", ""),
         },
     }
     await _publish("itinerary", itinerary, f"{len(itinerary['days'])} days planned")
-    return {
+    out: dict[str, Any] = {
         "days": [{"day": d["day"], "title": d["title"], "est_cost_usd": d["est_cost_usd"]}
                  for d in itinerary["days"]],
         "total_estimate_usd": itinerary["total_estimate_usd"],
         "within_budget": itinerary["within_budget"],
     }
+    if tailored.get("note"):
+        # For the supervisor's closing summary: what the note changed.
+        out["tailored_to_note"] = {
+            "picked_for_traveler": [
+                f"{x['name']} (day {x['day']}, {x['reason']}"
+                + (", added by the scout)" if x["added"] else ")")
+                for x in tailored.get("for_you", [])
+            ],
+            "left_out_as_asked": [f"{s['name']} ({s['reason']})"
+                                  for s in tailored.get("skipped", [])],
+            "could_not_include": [f"{u['what']} ({u['reason']})"
+                                  for u in tailored.get("unmet", [])],
+        }
+    return out
 
 
 async def read_scratchpad(field: str) -> dict:

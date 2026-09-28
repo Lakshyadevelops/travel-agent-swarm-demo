@@ -11,11 +11,15 @@ Because both call the same function with the same blackboard inputs, the total
 the budget agent approved is exactly the total the itinerary shows.
 
 What goes into each day:
-  1. Assign places to days. Sunrise and sunset places are the scarce slots --
-     only one of each per day -- so they are placed first. Everything else is
-     filled greedily by proximity to what the day already contains, with a bonus
-     for the traveler's stated interests. That keeps each day geographically
-     tight instead of zig-zagging across the city.
+  0. Apply the traveler's note (preferences.py): leave out what they asked to
+     skip, and rank the rest -- places the scout added for a wish first, then
+     places that match their interests, then everything else.
+  1. Assign places to days, one priority tier at a time, so that when days are
+     short it is what the traveler asked for that gets in. Within a tier,
+     sunrise and sunset places are the scarce slots -- only one of each per
+     day -- so they are placed first. Everything else is filled greedily by
+     proximity to what the day already contains. That keeps each day
+     geographically tight instead of zig-zagging across the city.
   2. Order each day by natural light (sunrise -> morning -> ... -> evening).
   3. Walk the day with a clock: travel leg from the previous place, wait for the
      place's best window if early, insert lunch when the day crosses midday.
@@ -23,9 +27,19 @@ What goes into each day:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
+from app.agents.preferences import (
+    CATEGORY_LABEL,
+    MAX_NOTE_CHARS,
+    PACE_LABEL,
+    Tailoring,
+    clean_text,
+    normalize_prefs,
+    parse_preferences,
+)
 from app.providers.data import utc_offset
 from app.providers.geo import (
     from_minutes,
@@ -37,8 +51,11 @@ from app.providers.geo import (
     window_for,
 )
 
+__all__ = ["parse_preferences", "plan_days"]
+
 _DAY_END = 23 * 60  # nothing starts after 23:00
 _DEFAULT_START = 8 * 60 + 30
+_LATE_START = 9 * 60 + 30  # "no early starts": out of the hotel no earlier than this
 _LUNCH_START, _LUNCH_LATEST = 12 * 60 + 15, 14 * 60 + 30
 _LUNCH_MIN = 60
 _ARRIVAL_BUFFER_MIN = 45  # deplane, immigration, bags
@@ -48,33 +65,7 @@ _FOOD_CATEGORIES = {"market", "food"}
 # to themselves rather than being wedged between two city stops.
 _DAY_TRIP_KM = 12.0
 _ALL_BANDS = {"sunrise", "morning", "midday", "anytime", "afternoon", "sunset", "evening"}
-
-# Interest keywords -> POI categories. Parsed by the supervisor at intake.
-INTEREST_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "market": ("food", "eat", "market", "culinary", "street food", "cuisine"),
-    "food": ("food", "eat", "dinner", "culinary", "restaurant", "pastry"),
-    "museum": ("museum", "art", "history", "gallery", "culture"),
-    "viewpoint": ("view", "photo", "sunset", "sunrise", "skyline", "panorama"),
-    "nature": ("nature", "hike", "park", "outdoor", "garden", "walk"),
-    "nightlife": ("night", "bar", "music", "show", "fado", "concert"),
-    "landmark": ("landmark", "sight", "iconic", "monument", "temple", "castle"),
-}
-
-
-def parse_preferences(nuance: str) -> dict[str, Any]:
-    """Extract pace and interest categories from the free-text nuance box."""
-    text = (nuance or "").lower()
-    interests = sorted(
-        cat for cat, words in INTEREST_KEYWORDS.items() if any(w in text for w in words)
-    )
-    if any(w in text for w in ("relax", "slow", "easy", "chill", "kids", "elderly")):
-        pace = 3
-    elif any(w in text for w in ("packed", "everything", "busy", "max", "intense")):
-        pace = 5
-    else:
-        pace = 4
-    early_ok = not any(w in text for w in ("no early", "late riser", "sleep in"))
-    return {"pace": pace, "interests": interests, "early_ok": early_ok}
+_SCARCE = ("sunrise", "sunset", "evening")
 
 
 def _parse_date(value: str) -> date:
@@ -96,7 +87,7 @@ def _assign(
     n_days: int,
     capacity: list[int],
     hotel: dict,
-    interests: set[str],
+    tier: Callable[[dict], int],
     allowed_bands: list[set[str]],
     centre: tuple[float, float],
 ) -> tuple[list[list[dict]], list[dict]]:
@@ -131,8 +122,9 @@ def _assign(
                     return False
         return True
 
-    # 1. Day trips claim whole days, latest first (never the arrival day).
-    trips = [p for p in pois if is_trip(p)]
+    # 1. Day trips claim whole days, latest first (never the arrival day). A trip
+    #    the traveler wished for gets first pick.
+    trips = sorted((p for p in pois if is_trip(p)), key=tier)
     local = [p for p in pois if not is_trip(p)]
     for p in trips:
         slots = [i for i in range(n_days - 1, 0, -1) if not days[i] and not trip_day[i]]
@@ -142,18 +134,6 @@ def _assign(
         else:
             unscheduled.append(p)
 
-    # 2. Scarce light-bound slots: at most one of each per day, least-loaded first.
-    for kind in ("sunrise", "sunset", "evening"):
-        for p in [q for q in local if q["best_time"] == kind]:
-            slots = [i for i in range(n_days)
-                     if ok(i, p) and not any(s["best_time"] == kind for s in days[i])]
-            if slots:
-                days[min(slots, key=lambda i: (load(i), i))].append(p)
-            else:
-                unscheduled.append(p)
-
-    rest = [p for p in local if p["best_time"] not in ("sunrise", "sunset", "evening")]
-
     def centroid(i: int) -> tuple[float, float]:
         pts = days[i] or [hotel]
         return (
@@ -161,28 +141,42 @@ def _assign(
             sum(p["lon"] for p in pts) / len(pts),
         )
 
-    # 3. Fill: the least-loaded open day takes its best remaining place, where
-    #    "best" = close to what the day already has, nudged by stated interests.
-    closed: set[int] = set()
-    while rest:
-        open_days = [i for i in range(n_days) if i not in closed and room(i)]
-        if not open_days:
-            break
-        i = min(open_days, key=lambda j: (load(j), j))
-        candidates = [p for p in rest if ok(i, p)]
-        if not candidates:
-            closed.add(i)
-            continue
-        clat, clon = centroid(i)
-        best = min(
-            candidates,
-            key=lambda p: haversine_km(clat, clon, p["lat"], p["lon"])
-            - (3.0 if p["category"] in interests else 0.0),
-        )
-        rest.remove(best)
-        days[i].append(best)
+    # Steps 2 and 3 run once per priority tier -- wishes, then interests, then
+    # the rest -- so a place the traveler asked for is never crowded out by one
+    # they didn't.
+    for level in sorted({tier(p) for p in local}):
+        group = [p for p in local if tier(p) == level]
 
-    return days, unscheduled + rest
+        # 2. Scarce light-bound slots: at most one of each per day, least-loaded first.
+        for kind in _SCARCE:
+            for p in [q for q in group if q["best_time"] == kind]:
+                slots = [i for i in range(n_days)
+                         if ok(i, p) and not any(s["best_time"] == kind for s in days[i])]
+                if slots:
+                    days[min(slots, key=lambda i: (load(i), i))].append(p)
+                else:
+                    unscheduled.append(p)
+
+        # 3. Fill: the least-loaded open day takes its closest remaining place,
+        #    keeping each day geographically tight.
+        rest = [p for p in group if p["best_time"] not in _SCARCE]
+        closed: set[int] = set()
+        while rest:
+            open_days = [i for i in range(n_days) if i not in closed and room(i)]
+            if not open_days:
+                break
+            i = min(open_days, key=lambda j: (load(j), j))
+            candidates = [p for p in rest if ok(i, p)]
+            if not candidates:
+                closed.add(i)
+                continue
+            clat, clon = centroid(i)
+            best = min(candidates, key=lambda p: haversine_km(clat, clon, p["lat"], p["lon"]))
+            rest.remove(best)
+            days[i].append(best)
+        unscheduled.extend(rest)
+
+    return days, unscheduled
 
 
 def _order(stops: list[dict], hotel: dict) -> list[dict]:
@@ -203,15 +197,22 @@ def plan_days(
     brief: dict[str, Any],
     prefs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build the timed day plan and price its ground costs."""
-    prefs = prefs or parse_preferences(brief.get("nuance", ""))
+    """Build the timed day plan and price its ground costs.
+
+    The traveler's preferences come from the scout's shortlist, which carries
+    the supervisor's reading of their note, so the budget guardrail and the
+    itinerary agent plan with the same reading. `prefs` overrides it.
+    """
+    prefs = normalize_prefs(
+        prefs or shortlist.get("prefs") or parse_preferences(brief.get("nuance", ""))
+    )
+    tailor = Tailoring(prefs)
     travelers = max(1, int(brief.get("travelers", 1)))
     n_days = max(1, int(brief.get("nights", 3)))
     start = _parse_date(brief.get("start_date", ""))
     speed = float(shortlist.get("speed_factor", 1.0))
     food_pp = float(shortlist.get("daily_food_usd", 50.0))
-    interests = set(prefs.get("interests", []))
-    pace = int(prefs.get("pace", 4))
+    pace = prefs["pace"]
 
     base = shortlist.get("base_area") or {
         "name": shortlist.get("destination", "centre"),
@@ -221,7 +222,16 @@ def plan_days(
         {"name": stay["name"], "lat": stay["lat"], "lon": stay["lon"]}
         if stay and stay.get("lat") else dict(base)
     )
-    pois = [dict(p) for p in shortlist.get("pois", [])]
+
+    # ---- what the note rules out never competes for a slot
+    pois: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for p in shortlist.get("pois", []):
+        why_not = tailor.skip_reason(p)
+        if why_not:
+            skipped.append({"name": p["name"], "reason": why_not})
+        else:
+            pois.append(dict(p))
 
     # ---- day 1 depends on when the plane lands
     arrival = _arrival_minutes(flight)
@@ -250,7 +260,7 @@ def plan_days(
 
     # Which light-bands each day can still use.
     base_bands = set(_ALL_BANDS)
-    if not prefs.get("early_ok", True):
+    if not prefs["early_ok"]:
         base_bands.discard("sunrise")
     allowed_bands = [set(base_bands) for _ in range(n_days)]
     allowed_bands[0].discard("sunrise")  # you are on a plane
@@ -264,7 +274,7 @@ def plan_days(
 
     centre = (float(shortlist.get("lat", hotel["lat"])), float(shortlist.get("lon", hotel["lon"])))
     assigned, unscheduled = _assign(
-        pois, n_days, capacity, hotel, interests, allowed_bands, centre
+        pois, n_days, capacity, hotel, tailor.tier, allowed_bands, centre
     )
 
     days_out: list[dict[str, Any]] = []
@@ -304,6 +314,8 @@ def plan_days(
             first_leg = travel_leg(hotel, stops[0], travelers=travelers, speed_factor=speed)
             pref, _ = window_for(stops[0]["best_time"], sun)
             cursor = int(min(_DEFAULT_START, max(4 * 60, pref - first_leg["minutes"])))
+        if not prefs["early_ok"]:
+            cursor = max(cursor, _LATE_START)
 
         prev = hotel
         lunch_done = False
@@ -343,7 +355,7 @@ def plan_days(
                 note = f"arrives after sunset ({sun['sunset']}); still worth it for city lights"
 
             cost = round(float(stop.get("cost_usd", 0.0)) * travelers, 2)
-            items.append({
+            item = {
                 "kind": "stop",
                 "start": from_minutes(begin),
                 "end": from_minutes(end),
@@ -355,7 +367,13 @@ def plan_days(
                 "cost_usd": cost,
                 "leg": leg,
                 "wait_min": wait,
-            })
+            }
+            for_you = tailor.reason(stop)
+            if for_you:
+                item["for_you"] = for_you
+            if stop.get("added_by"):
+                item["added_by"] = stop["added_by"]
+            items.append(item)
 
             if stop["category"] in _FOOD_CATEGORIES and stop["best_time"] in ("midday", "morning"):
                 lunch_done = True
@@ -425,6 +443,26 @@ def plan_days(
             "evening": bucket(17 * 60, 24 * 60),
         })
 
+    scheduled = [i for day in days_out for i in day["items"] if i["kind"] == "stop"]
+    tailored = {
+        "note": clean_text(brief.get("nuance", ""), MAX_NOTE_CHARS),
+        "understood_by": prefs["understood_by"],
+        "pace": pace,
+        "pace_label": PACE_LABEL.get(pace, "balanced"),
+        "early_ok": prefs["early_ok"],
+        "interests": [CATEGORY_LABEL.get(c, c) for c in prefs["interests"]],
+        "avoid": [CATEGORY_LABEL.get(c, c) for c in prefs["avoid"]],
+        "wishes": prefs["wishes"],
+        "for_you": [
+            {"name": i["name"], "day": day["day"], "reason": i["for_you"],
+             "added": i.get("added_by") == "scout"}
+            for day in days_out for i in day["items"]
+            if i["kind"] == "stop" and i.get("for_you")
+        ],
+        "skipped": skipped,
+        "unmet": tailor.unmet(scheduled, pois, str(shortlist.get("destination") or "the city")),
+    }
+
     return {
         "days": days_out,
         "ground_cost_usd": round(ground_total, 2),
@@ -432,4 +470,5 @@ def plan_days(
         "arrival_transfer": transfer,
         "unscheduled": [p["name"] for p in unscheduled],
         "prefs": prefs,
+        "tailored": tailored,
     }

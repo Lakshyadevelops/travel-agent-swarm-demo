@@ -39,14 +39,15 @@ from app.llm.fake_llm import FakeLlm
 
 PLAN_LOOP_MAX_ROUNDS = 3
 
-# name -> (label, instruction, tool, closing line used by FakeLlm)
+# name -> (label, instruction, tool, closing line used by FakeLlm). An
+# instruction is text, or an ADK InstructionProvider built per run.
 AGENT_SPECS = {
     "supervisor_intake": (
         "Supervisor · intake", prompts.SUPERVISOR_INTAKE, intake_tool,
         "Brief understood. Dispatching the specialists.",
     ),
     "destination_scout": (
-        "Destination & Vibe Scout", prompts.SCOUT, scout_tool,
+        "Destination & Vibe Scout", prompts.scout_instruction, scout_tool,
         "Shortlisted the neighborhoods worth basing in this season.",
     ),
     "transit_agent": (
