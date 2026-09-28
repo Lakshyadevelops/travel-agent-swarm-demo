@@ -7,22 +7,21 @@ import json
 import pytest
 from google.adk.tools import FunctionTool
 
+from app.agents import prompts
 from app.agents.orchestrator import run_swarm
 from app.agents.planner import plan_days
 from app.agents.preferences import (
     CATEGORIES,
     INTEREST_KEYWORDS,
-    clean_extra_places,
+    clean_places,
     merge_reading,
     parse_preferences,
 )
-from app.agents.prompts import scout_instruction
-from app.agents.runtime import CURRENT_BRIEF, CURRENT_RUN_ID, CURRENT_SCRATCHPAD, CURRENT_SEED
-from app.agents.schemas import WishPlace
 from app.agents.scratchpad_tools import intake_tool, itinerary_tool, scout_tool
 from app.providers.data import DESTINATIONS
-from app.providers.tools import PROVIDER_LATENCY_MS, scout_destination
+from app.providers.tools import scout_destination
 from tests.conftest import BRIEF
+from tests.helpers import bind as _bind
 
 LONDON = DESTINATIONS["london"]
 CENTRE = (LONDON["lat"], LONDON["lon"])
@@ -124,34 +123,36 @@ def test_a_skip_in_the_note_outlasts_a_model_slip():
     assert p["interests"] == [] and p["avoid"] == ["museum"]
 
 
-# ------------------------------------------------------------ scout extras
+# ------------------------------------------------------------ researched places
 def _hill_prefs():
     return merge_reading(HILLS, interests=["hike"], avoid=[], wishes=["hill trek"])
 
 
-def test_scout_extras_are_validated():
+def test_researched_places_are_validated_and_tagged_for_wishes():
     raw = [
-        WishPlace(**HEATH),  # as ADK hands it over when the model's JSON validates
+        HEATH,
         {"name": "Primrose Hill", "lat": 51.539, "lon": -0.1606, "for_wish": "hill trek"},
         {"name": "Eiffel Tower", "lat": 48.8584, "lon": 2.2945, "for_wish": "hill trek"},
         {"name": "Box Hill", "lat": 51.253, "lon": -0.31, "category": "volcano",
          "best_time": "noon", "duration_min": 9999, "cost_usd": -5, "tip": "t" * 500,
          "for_wish": "hills"},
         {"name": "Oxford Street", "lat": 51.5152, "lon": -0.1418, "category": "shopping",
-         "for_wish": "shopping"},
+         "for_wish": ""},
         {"name": "", "lat": 51.5, "lon": -0.1},
         {"name": "Leith Hill", "lat": float("nan"), "lon": -0.37},
         {"name": "Richmond Park", "lat": 51.4425, "lon": -0.275, "category": "nature",
-         "for_wish": "hill trek"},
-        {"name": "Epping Forest", "lat": 51.66, "lon": 0.05, "category": "nature",
-         "for_wish": "hill trek"},
+         "for_wish": "«hill trek»"},  # the prompt quotes wishes; the model may copy the marks
         "not a place",
     ]
-    accepted, rejected = clean_extra_places(
-        raw, catalog=[dict(p) for p in LONDON["pois"]], centre=CENTRE, prefs=_hill_prefs())
+    accepted, rejected = clean_places(
+        raw, centre=CENTRE, prefs=_hill_prefs(), known=[dict(p) for p in LONDON["pois"]])
 
-    assert [p["name"] for p in accepted] == [HEATH["name"], "Box Hill", "Richmond Park"]
-    assert all(p["added_by"] == "scout" and p["for_you"] == "hill trek" for p in accepted)
+    assert [p["name"] for p in accepted] == [
+        HEATH["name"], "Box Hill", "Oxford Street", "Richmond Park"]
+    assert {p["name"]: p.get("for_you") for p in accepted} == {
+        HEATH["name"]: "hill trek", "Box Hill": "hill trek", "Oxford Street": None,
+        "Richmond Park": "hill trek"}
+    assert all(p.get("added_by") == ("scout" if p.get("for_you") else None) for p in accepted)
     box = accepted[1]
     assert box["category"] == "experience" and box["best_time"] == "anytime"
     assert box["duration_min"] == 480 and box["cost_usd"] == 0 and len(box["tip"]) == 140
@@ -159,107 +160,87 @@ def test_scout_extras_are_validated():
     reasons = {r["name"]: r["reason"] for r in rejected}
     assert reasons["Primrose Hill"] == "already on the list"
     assert "too far" in reasons["Eiffel Tower"]
-    assert "not tied" in reasons["Oxford Street"]
     assert reasons["Leith Hill"] == "invalid coordinates"
-    assert "only 3" in reasons["Epping Forest"]
-    assert len(rejected) == 7
+    assert reasons["(unnamed)"] == "not a named place"
+    assert len(rejected) == 5
 
 
-def test_scout_extras_need_something_to_serve():
-    accepted, rejected = clean_extra_places(
-        [HEATH], catalog=[], centre=CENTRE, prefs=merge_reading(""))
-    assert accepted == []
-    assert rejected[0]["reason"] == "the traveler stated no preferences to serve"
+def test_researched_places_need_no_preferences_and_are_capped():
+    places = [dict(HEATH, name=f"Place {i}", lat=51.50 + i * 0.01) for i in range(5)]
+    accepted, rejected = clean_places(places, centre=CENTRE, prefs=merge_reading(""), limit=3)
+    assert [p["name"] for p in accepted] == ["Place 0", "Place 1", "Place 2"]
+    assert not any("for_you" in p or "added_by" in p for p in accepted)
+    assert [r["reason"] for r in rejected] == ["only 3 places are kept"] * 2
 
 
-def test_scout_extras_respect_skips():
-    prefs = merge_reading("museums, no nightlife", interests=["museum"], avoid=["nightlife"])
-    accepted, rejected = clean_extra_places(
-        [{"name": "Ronnie Scott's", "lat": 51.5134, "lon": -0.1318, "category": "nightlife"}],
-        catalog=[], centre=CENTRE, prefs=prefs)
-    assert accepted == [] and "skip nightlife" in rejected[0]["reason"]
+def test_researched_places_respect_skips_unless_wished_for():
+    prefs = merge_reading("live jazz, no nightlife", interests=[], avoid=["nightlife"],
+                          wishes=["live jazz"])
+    accepted, rejected = clean_places(
+        [{"name": "Ronnie Scott's", "lat": 51.5134, "lon": -0.1318, "category": "nightlife",
+          "for_wish": "live jazz"},
+         {"name": "Soho pub crawl", "lat": 51.5136, "lon": -0.1365, "category": "nightlife"}],
+        centre=CENTRE, prefs=prefs)
+    assert [(p["name"], p["for_you"]) for p in accepted] == [("Ronnie Scott's", "live jazz")]
+    assert "skip nightlife" in rejected[0]["reason"]
+
+
+def test_neighbouring_sights_are_not_duplicates():
+    ubud = (-8.5069, 115.2625)
+    accepted, rejected = clean_places([
+        {"name": "Ubud Palace", "lat": -8.5066, "lon": 115.2625},
+        {"name": "Ubud Art Market", "lat": -8.5074, "lon": 115.2631},  # across the street
+        {"name": "Sacred Monkey Forest Sanctuary", "lat": -8.5188, "lon": 115.2585},
+        {"name": "Ubud Monkey Forest", "lat": -8.5180, "lon": 115.2590},  # the same, renamed
+    ], centre=ubud, prefs=merge_reading(""))
+    assert [p["name"] for p in accepted] == [
+        "Ubud Palace", "Ubud Art Market", "Sacred Monkey Forest Sanctuary"]
+    assert rejected == [{"name": "Ubud Monkey Forest", "reason": "already on the list"}]
 
 
 # ------------------------------------------------------------ tools
-class MemPad:
-    """Just enough of a ScratchpadStore; values round-trip through JSON like the real ones."""
-
-    def __init__(self) -> None:
-        self.rows: dict[tuple[str, str], str] = {}
-
-    async def write(self, run_id, field, value):
-        self.rows[(run_id, field)] = json.dumps(value)
-
-    async def read(self, run_id, field):
-        raw = self.rows.get((run_id, field))
-        return None if raw is None else json.loads(raw)
-
-    async def read_all(self, run_id):
-        return {f: json.loads(v) for (r, f), v in self.rows.items() if r == run_id}
-
-
-def _bind(brief: dict) -> MemPad:
-    """Bind the run context. Each async test runs in its own task, so this can't leak."""
-    pad = MemPad()
-    CURRENT_SCRATCHPAD.set(pad)
-    CURRENT_RUN_ID.set("t")
-    CURRENT_SEED.set("seed")
-    CURRENT_BRIEF.set(brief)
-    PROVIDER_LATENCY_MS.set(0)
-    return pad
-
-
 async def test_intake_and_scout_carry_the_reading_onto_the_blackboard():
     pad = _bind({"destination": "London", "nuance": HILLS, "nights": 4, "travelers": 2})
     constraints = await intake_tool(interests=["hike", "nature"], avoid=[], wishes=["hill trek"])
     assert constraints["understood_by"] == "supervisor"
     assert constraints["wishes"] == ["hill trek"]
+    assert "place" not in constraints  # the scripted model: catalog, no research
 
-    out = await scout_tool(extra_places=[
-        WishPlace(**HEATH), {"name": "Eiffel Tower", "lat": 48.8584, "lon": 2.2945}])
+    out = await scout_tool()
     shortlist = await pad.read("t", "destination_shortlist")
     assert shortlist["prefs"]["wishes"] == ["hill trek"]
-    assert shortlist["pois"][0]["name"] == HEATH["name"]  # wishes first
-    assert [p["name"] for p in shortlist["pois"] if p.get("added_by")] == [HEATH["name"]]
-    assert out["added_for_traveler"] == [f"{HEATH['name']} (for hill trek)"]
-    assert out["rejected_suggestions"][0].startswith("Eiffel Tower:")
+    assert shortlist["inputs_from"] == ["supervisor: trip_constraints"]
+    # The catalog adds nothing for wishes; live research does (test_research.py).
+    assert shortlist["added_for_you"] == [] and out["added_for_traveler"] == []
+    assert "source" not in shortlist and "grounding" not in shortlist
 
-    summary = await itinerary_tool()
+    await itinerary_tool()
     itinerary = await pad.read("t", "itinerary")
-    # Named once as added -- not a second time as "prioritised".
-    assert itinerary["collaboration"]["scout"].count(HEATH["name"]) == 1
     assert itinerary["tailored"]["wishes"] == ["hill trek"]
-    assert any("added by the scout" in x
-               for x in summary["tailored_to_note"]["picked_for_traveler"])
 
 
 def test_tool_declarations_offer_the_vocabulary():
     intake = FunctionTool(intake_tool)._get_declaration().parameters_json_schema
     assert set(intake["properties"]) == {"interests", "avoid", "pace", "early_starts_ok", "wishes"}
     assert "hike" in json.dumps(intake["properties"]["interests"])
+    # The scout takes nothing from the model: it reads the reading off the blackboard.
     scout = FunctionTool(scout_tool)._get_declaration().parameters_json_schema
-    assert "WishPlace" in json.dumps(scout)
+    assert not (scout or {}).get("properties")
 
 
-def test_scout_instruction_lists_the_destination_catalog():
-    class Ctx:
-        state = {"brief": {"destination": "London"}}
-
-    token = CURRENT_BRIEF.set({})
-    try:
-        text = scout_instruction(Ctx())
-    finally:
-        CURRENT_BRIEF.reset(token)
-    assert "Destination & Vibe Scout for London" in text
-    assert "- Primrose Hill (viewpoint, best at sunrise)" in text
-    assert "{city}" not in text and "{catalog}" not in text
+def test_instructions_are_static_text():
+    """ADK fills {placeholders} in string instructions from session state."""
+    for name in ("SUPERVISOR_INTAKE", "SCOUT", "TRANSIT", "STAY", "BUDGET", "ITINERARY",
+                 "SUPERVISOR_FINAL"):
+        text = getattr(prompts, name)
+        assert isinstance(text, str) and "{" not in text and "}" not in text, name
 
 
 # ------------------------------------------------------------ planner
 async def _shortlist(prefs: dict, extras=()) -> dict:
     s = (await scout_destination("London", "seed")).model_dump()
-    accepted, _ = clean_extra_places(
-        list(extras), catalog=s["pois"], centre=(s["lat"], s["lon"]), prefs=prefs)
+    accepted, _ = clean_places(list(extras), centre=(s["lat"], s["lon"]), prefs=prefs,
+                               known=s["pois"])
     s["pois"] = accepted + s["pois"]
     s["prefs"] = prefs
     return s

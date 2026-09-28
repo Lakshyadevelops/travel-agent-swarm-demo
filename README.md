@@ -20,6 +20,21 @@ The agents share findings through a scratchpad that every agent can read and wri
 - **Budget guardrail:** prices every day of the trip. If the plan is over budget, it sends price caps to the stay and transit agents for the next round.
 - **Itinerary agent:** produces timed stops, travel legs (distance, time, mode), sunrise/sunset/golden-hour scheduling, day trips and lunch.
 
+### Where the facts come from
+
+**In the UI (live Gemini), any destination works.** Nothing is looked up in a saved list:
+- **Supervisor:** identifies the destination and both airports from the model's own knowledge. An unknown place stops the run with *"We couldn't find that destination"*.
+- **Scout, stay and transit agents:** research places to see, places to stay and flights with **Google Search grounding**, in parallel (`app/providers/research.py`).
+  - Each is two calls: a grounded call writes research notes, then a second call turns them into a fixed JSON schema. Search can't run in a call that has a response schema.
+  - The server validates every entry before it is posted: places near the destination, prices within bounds, and flight times that are physically possible.
+  - Findings are shared within one run, so budget re-plans don't search again. Nothing is kept across runs.
+  - A trip close to home (the same airport, or airports under 100 km apart) needs no flight, so the transit agent doesn't search.
+  - The stay agent aims for a room at about 30% of the budget per night near the scout's base, not simply the cheapest one. If flights leave less room, the budget guardrail's price caps bring it down in the next round.
+  - Gemini sometimes answers "busy" (503 UNAVAILABLE under high demand, or 429). Every model call, by an agent or by research, then tries up to 7 times, pausing about 2, 4, 8, 16, 20 and 20 s in between, so a busy spell of about a minute only slows a run down. A research call that timed out is retried once. The policy lives in `app/config.py` (`MODEL_RETRY_*`).
+  - Google's Search Suggestions and the sources are shown with the itinerary. Hotel rates and fares are typical prices found online, not quotes.
+
+**Benchmarks and tests use the scripted model and a small curated catalog**, so they make no network calls. Both paths issue the same store operations; `tests/test_research.py` checks the op counts match.
+
 ## Storage arms
 
 | Arm | Session log | Scratchpad |
@@ -37,20 +52,20 @@ docker compose up -d            # stores listen on 127.0.0.1 only
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # add GOOGLE_API_KEY: the UI always plans with live Gemini
 .venv/bin/python -m uvicorn app.main:app --port 8080
-.venv/bin/python -m pytest -q   # 100 tests; they use the scripted model, no API calls
+.venv/bin/python -m pytest -q   # ~200 tests; scripted model and canned research, no API calls
 ```
 
 The UI has two tabs, one per audience. One event stream per run feeds both.
 - **Experience** (customer demo):
-  - The trip form, with structured fields plus free text.
-  - The travel team's progress in plain language. Each agent shows its key finding, and on budget re-plans shows *"Over by $300. Asking the team for cheaper options (round 2 of 3)"*.
-  - The finished day-by-day itinerary.
+  - The trip form, with structured fields plus free text. Any destination.
+  - The travel team's progress in plain language. Each agent shows its key finding and what it searched for, and on budget re-plans shows *"Over by $300. Asking the team for cheaper options (round 2 of 3)"*.
+  - The finished day-by-day itinerary, including travel days for long flights, with *Researched with Google Search* (Google's Search Suggestions and the sources).
   - No timings, store names or model settings.
 - **Under the Hood** (developers):
-  - **Timeline:** every session and scratchpad operation of the run, plus agent start/finish and blackboard waits.
+  - **Timeline:** every session and scratchpad operation of the run, plus agent start/finish, Google Search research steps and blackboard waits.
   - **Store panels:** the session (state + ADK events) and the shared scratchpad (value, writer, version, round, readers), shown **as they were at the selected step**.
   - **Controls:** Prev/Next, Replay and Live.
-  - **Step detail:** the store's physical command, round trips, bytes and duration for that operation.
+  - **Step detail:** the store's physical command, round trips, bytes and duration for that operation. For a research step: the searches Google ran, the sources read, and the search and structuring times.
   - **Raw store contents:** a raw read of the keys or rows the run left behind (`/api/inspect/{run_id}`).
   - **Store switch:** Valkey / PostgreSQL for the next run.
 
@@ -104,6 +119,8 @@ Caveats:
 
 ```
 app/agents/     swarm, prompts, scratchpad coordination, day planner
+app/providers/  live research (Gemini + Google Search), catalog and mock flights for
+                benchmarks, travel legs, sun times
 app/state/      Valkey / Postgres session services and scratchpads, backend registry,
                 inspector (store layout + raw snapshot for Under the Hood)
 app/bench/      interleaved benchmark, sweeps, concurrent-user load test

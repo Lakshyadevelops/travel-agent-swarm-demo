@@ -1,5 +1,9 @@
 """Deterministic mock travel catalogs.
 
+Used by benchmarks and tests only (the scripted model). The live demo researches
+any destination with Google Search instead (providers/research.py) and never
+reads this catalog.
+
 Seeded by the brief so repeated benchmark iterations see identical data -- a
 provider that returned different results per iteration would inject variance
 into exactly the measurement we are trying to make precise.
@@ -16,8 +20,9 @@ straight-line-times-detour distance model that consumes them.
 from __future__ import annotations
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def _poi(name, lat, lon, category, best_time, duration_min, cost_usd, tip):
@@ -332,7 +337,18 @@ def _nth_sunday(year: int, month: int, n: int) -> date:
 
 
 def utc_offset(dest: dict[str, Any], day: date) -> float:
-    """Local UTC offset for a date, applying the EU or US DST rule."""
+    """Local UTC offset for a date.
+
+    A researched destination names its IANA zone (`tz_name`), which knows every
+    country's DST rule. Catalog cities carry a base offset plus an EU or US rule.
+    """
+    tz_name = dest.get("tz_name")
+    if tz_name:
+        try:
+            noon = datetime(day.year, day.month, day.day, 12, tzinfo=ZoneInfo(str(tz_name)))
+            return noon.utcoffset().total_seconds() / 3600.0  # type: ignore[union-attr]
+        except (ZoneInfoNotFoundError, ValueError, TypeError, AttributeError):
+            pass
     base = float(dest.get("tz", 0))
     rule = dest.get("dst")
     if rule == "eu":

@@ -201,6 +201,9 @@ main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 56px; }
 .tm-finding.bad { color: var(--bad); }
 .tm-finding.stale { opacity: 0.5; }
 .tm-say { color: var(--muted); font-style: italic; }
+.tm-search { margin-left: 28px; font-size: 12px; color: var(--muted); }
+.tm-search:empty { display: none; }
+.tm-search.busy { color: var(--accent); }
 
 .tm-icon {
   width: 18px; height: 18px;
@@ -360,6 +363,49 @@ main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 56px; }
 }
 .unscheduled { color: var(--muted); font-size: 13px; margin-top: 14px; }
 
+.day.travel { background: var(--surface-3); box-shadow: none; }
+.day.travel .day-title { color: var(--muted); }
+.item.flight strong { color: var(--r-transit); }
+
+.sources {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+}
+.sources h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.src-note { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+.src-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+  border-top: 1px solid var(--hairline);
+}
+.src-label { font-size: 12px; font-weight: 600; }
+.src-none, .src-kind { font-size: 12px; color: var(--muted); }
+/* Google's own widget. Light, like the rest of the page. */
+iframe.suggestions {
+  display: block;
+  width: 100%;
+  height: 56px;
+  border: 0;
+  background: transparent;
+  color-scheme: light;
+}
+.src-links { margin-top: 6px; font-size: 12px; }
+.src-links summary { cursor: pointer; color: var(--muted); }
+.src-links ul, .src-list, .queries { margin: 6px 0 0; padding-left: 18px; }
+.src-links li, .src-list li, .queries li { margin-bottom: 2px; overflow-wrap: anywhere; }
+
 /* ======================================================== Under the Hood */
 .runbar {
   display: flex;
@@ -443,6 +489,7 @@ code.struct { font-size: 11px; word-break: break-all; }
 .tl-mark { display: inline-block; width: 1.3em; font-size: 10px; color: var(--accent); }
 .tl-agent.end .tl-mark { color: var(--muted); }
 .tl-wait .tl-main { color: var(--warn); }
+.tl-research .tl-main { font-family: var(--sans); color: var(--accent); }
 .tl-actor { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-verb { white-space: nowrap; }
 .store-session .tl-verb { color: #8430ce; }

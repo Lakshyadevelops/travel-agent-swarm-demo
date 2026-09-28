@@ -36,7 +36,9 @@ async def main(runs: int) -> None:
             }
             t0 = time.perf_counter()
             try:
-                s = await run_swarm(brief, "valkey", llm_mode="gemini")
+                # Benchmark tooling: plan from the curated catalog, as the
+                # load tests that replay these latencies do.
+                s = await run_swarm(brief, "valkey", llm_mode="gemini", live_research=False)
                 print(f"run {i + 1}/{runs} {brief['destination']}: "
                       f"{s['e2e_latency_ms'] / 1000:.1f}s, errors={s['errors']}")
             except Exception as exc:  # noqa: BLE001 - keep calibrating on failures

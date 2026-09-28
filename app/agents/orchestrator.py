@@ -16,11 +16,13 @@ from app.agents.runtime import (
     CURRENT_RUN_ID,
     CURRENT_SCRATCHPAD,
     CURRENT_SEED,
+    LIVE_RESEARCH,
     STEP_SINK,
     WRITES_PER_STEP,
 )
 from app.agents.swarm import PLAN_LOOP_MAX_ROUNDS, build_swarm
 from app.config import settings
+from app.providers import research
 from app.providers.tools import PROVIDER_LATENCY_MS
 from app.state.registry import backends
 from app.telemetry.feed import StateFeed
@@ -91,10 +93,19 @@ async def run_swarm(
     step_queue: asyncio.Queue | None = None,
     oplog: OpLog | None = None,
     run_id: str | None = None,
+    live_research: bool | None = None,
 ) -> dict[str, Any]:
-    """Execute one full planning session and return the telemetry summary."""
+    """Execute one full planning session and return the telemetry summary.
+
+    `live_research` follows the model by default: on the live model the
+    specialists research the destination with Google Search; the scripted
+    model plans from the curated catalog, with no network calls. Benchmark
+    tooling turns it off on the live model (scripts/calibrate_llm.py); tests
+    turn it on with the scripted model and canned research.
+    """
     run_id = run_id or f"{backend_id}-{uuid.uuid4().hex[:8]}"
     mode = llm_mode or settings.llm_mode
+    live = mode == "gemini" if live_research is None else live_research
 
     brief = dict(brief)
     brief.setdefault("nights", _nights(brief))
@@ -109,6 +120,7 @@ async def run_swarm(
     CURRENT_OPLOG.set(oplog)
     CURRENT_RUN_ID.set(run_id)
     CURRENT_BRIEF.set(brief)
+    LIVE_RESEARCH.set(live)
     # Seed the mock providers from the BRIEF, never the run id: run ids embed the
     # backend name, which would give each arm different inventory and payload
     # sizes and silently invalidate the comparison.
@@ -130,9 +142,11 @@ async def run_swarm(
     )
     STEP_SINK.set(step_queue)
     # Per-run signalling for blackboard waits. Gemini agents can take tens of
-    # seconds to reach their tool call, so the wait timeout is generous there.
-    coord = Coordinator(wait_timeout_s=60.0 if mode == "gemini" else 10.0,
-                        max_rounds=PLAN_LOOP_MAX_ROUNDS)
+    # seconds to reach their tool call, and a Google-Search-grounded research
+    # step up to a minute or so, plus up to about 70 s of retries when Gemini is
+    # busy (config.MODEL_RETRY_ATTEMPTS), so the wait timeout is generous there.
+    wait_s = 240.0 if live else 60.0 if mode == "gemini" else 10.0
+    coord = Coordinator(wait_timeout_s=wait_s, max_rounds=PLAN_LOOP_MAX_ROUNDS)
     CURRENT_COORD.set(coord)
     # UI runs stream every state op, with its value, to the Under the Hood tab.
     # Benchmarks and load tests pass no queue, so they bind nothing. Bound before
@@ -166,6 +180,10 @@ async def run_swarm(
     # Wall clock brackets the entire swarm, which is what the user actually waits for.
     started = time.perf_counter()
     final_text = ""
+    if live:
+        # Starts identifying the destination now, alongside the supervisor's
+        # first model turn. Nothing is kept once the run ends.
+        research.begin_run(run_id, brief)
     try:
         async for event in runner.run_async(
             user_id=settings.demo_user_id, session_id=run_id, new_message=message
@@ -176,6 +194,8 @@ async def run_swarm(
                 final_text = text
     finally:
         telemetry.wall_clock_ms = (time.perf_counter() - started) * 1000.0
+        if live:
+            research.end_run(run_id)
 
     board = await scratchpad.read_all(run_id)
     telemetry.evicted_keys = await backends.evicted_keys(backend_id)

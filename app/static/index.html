@@ -32,12 +32,12 @@
           <h2>Your trip</h2>
           <label class="field">
             <span>Destination</span>
-            <input id="destination" name="destination" list="dest-list" value="Lisbon" maxlength="80" required>
+            <input id="destination" name="destination" list="dest-list" value="Lisbon" minlength="2" maxlength="80" placeholder="City, island or region" required>
           </label>
           <datalist id="dest-list"></datalist>
           <label class="field">
             <span>Departing from</span>
-            <input id="origin" name="origin" value="SFO" minlength="2" maxlength="40" required>
+            <input id="origin" name="origin" value="SFO" minlength="2" maxlength="60" placeholder="City or airport code" required>
           </label>
           <div class="field-row">
             <label class="field">

@@ -13,6 +13,16 @@ load_dotenv(REPO_ROOT / ".env")
 
 RUNS_DIR = REPO_ROOT / "runs"
 
+# Retry policy for "busy" Gemini answers (429 and 5xx), shared by the agents
+# (swarm._model_for) and grounded research (research._generate). Under high
+# demand Gemini answers 503 UNAVAILABLE ("preempted by higher priority") in
+# spells that can outlast 15 s, so a call rides out about 70 s of them: pauses
+# of roughly 2, 4, 8, 16, 20 and 20 s between 7 attempts. A busy answer comes
+# back in about a second, so the pauses are nearly all of the extra wait.
+MODEL_RETRY_ATTEMPTS = 7
+MODEL_RETRY_FIRST_S = 2.0
+MODEL_RETRY_MAX_S = 20.0
+
 
 def _int(name: str, default: int) -> int:
     try:

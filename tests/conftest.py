@@ -23,6 +23,24 @@ async def live_backends():
     await backends.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """No test reaches Gemini, even with an API key in the environment.
+
+    Live research refuses to call the model (tests patch research._generate
+    with canned answers instead), and runs started from the page use the
+    scripted model unless a test opts into "gemini".
+    """
+    from app import main
+    from app.providers import research
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to call Gemini for live research")
+
+    monkeypatch.setattr(research, "_call", refuse)
+    monkeypatch.setattr(main, "UI_LLM_MODE", "fake")
+
+
 BRIEF = {
     "destination": "Lisbon",
     "origin": "SFO",

@@ -34,20 +34,19 @@ from app.agents.scratchpad_tools import (
     scout_tool,
     stays_tool,
 )
-from app.config import settings
+from app.config import MODEL_RETRY_ATTEMPTS, MODEL_RETRY_FIRST_S, MODEL_RETRY_MAX_S, settings
 from app.llm.fake_llm import FakeLlm
 
 PLAN_LOOP_MAX_ROUNDS = 3
 
-# name -> (label, instruction, tool, closing line used by FakeLlm). An
-# instruction is text, or an ADK InstructionProvider built per run.
+# name -> (label, instruction, tool, closing line used by FakeLlm).
 AGENT_SPECS = {
     "supervisor_intake": (
         "Supervisor · intake", prompts.SUPERVISOR_INTAKE, intake_tool,
         "Brief understood. Dispatching the specialists.",
     ),
     "destination_scout": (
-        "Destination & Vibe Scout", prompts.scout_instruction, scout_tool,
+        "Destination & Vibe Scout", prompts.SCOUT, scout_tool,
         "Shortlisted the neighborhoods worth basing in this season.",
     ),
     "transit_agent": (
@@ -78,12 +77,14 @@ def _model_for(agent_name: str, llm_mode: str):
     label, instruction, tool, closing = AGENT_SPECS[agent_name]
     if llm_mode == "gemini":
         # Retry transient overload errors (503 UNAVAILABLE, 429, 5xx) with
-        # exponential backoff instead of failing the agent mid-plan.
+        # capped exponential backoff instead of failing the agent mid-plan.
+        # Same schedule as grounded research: see config.MODEL_RETRY_ATTEMPTS.
         return Gemini(
             model=settings.gemini_model,
             retry_options=types.HttpRetryOptions(
-                attempts=5, initial_delay=1.0, max_delay=16.0, exp_base=2.0,
-                jitter=0.5, http_status_codes=[429, 500, 502, 503, 504],
+                attempts=MODEL_RETRY_ATTEMPTS, initial_delay=MODEL_RETRY_FIRST_S,
+                max_delay=MODEL_RETRY_MAX_S, exp_base=2.0, jitter=1.0,
+                http_status_codes=[429, 500, 502, 503, 504],
             ),
         )
     return FakeLlm(

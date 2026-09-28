@@ -31,26 +31,6 @@ class TravelBrief(BaseModel):
     nuance: str = Field(default="", description="Free-text preferences")
 
 
-class WishPlace(BaseModel):
-    """A real place the scout adds because the catalog lacks something asked for.
-
-    Proposed by the model, so every field is validated again before it reaches
-    the blackboard (preferences.clean_extra_places).
-    """
-
-    name: str = Field(description="Name of a real, well-known place")
-    lat: float = Field(description="Latitude in decimal degrees")
-    lon: float = Field(description="Longitude in decimal degrees")
-    category: Category = "experience"
-    best_time: BestTime = Field(default="anytime", description="Best time of day to visit")
-    duration_min: int = Field(default=90, description="Typical visit length in minutes")
-    cost_usd: float = Field(default=0.0, description="Entry cost per person in USD; 0 if free")
-    tip: str = Field(default="", description="One practical tip, under 140 characters")
-    for_wish: str = Field(
-        default="", description="The traveler's wish (or interest) this place serves, verbatim"
-    )
-
-
 class Place(BaseModel):
     name: str
     lat: float = 0.0

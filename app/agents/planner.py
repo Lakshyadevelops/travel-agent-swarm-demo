@@ -23,6 +23,11 @@ What goes into each day:
   2. Order each day by natural light (sunrise -> morning -> ... -> evening).
   3. Walk the day with a clock: travel leg from the previous place, wait for the
      place's best window if early, insert lunch when the day crosses midday.
+
+A flight that lands on a later date (SFO -> Bali) turns the days before landing
+into travel days. On a researched destination every leg uses the modes that
+exist there (no metro in Bali, trains for long legs in England), and a day trip
+is judged by the journey from the hotel rather than distance from a centre.
 """
 
 from __future__ import annotations
@@ -64,6 +69,9 @@ _FOOD_CATEGORIES = {"market", "food"}
 # Places further than this from the city centre are day trips: they get a day
 # to themselves rather than being wedged between two city stops.
 _DAY_TRIP_KM = 12.0
+# A researched destination (a region such as Bali has no single centre) judges
+# a day trip by the journey from the hotel instead, one way, in minutes.
+_DAY_TRIP_MIN = 45
 _ALL_BANDS = {"sunrise", "morning", "midday", "anytime", "afternoon", "sunset", "evening"}
 _SCARCE = ("sunrise", "sunset", "evening")
 
@@ -82,6 +90,47 @@ def _arrival_minutes(flight: dict | None) -> int | None:
     return to_minutes(parts[-1]) if parts else None
 
 
+def arrival_offset(flight: dict | None, brief: dict[str, Any]) -> int:
+    """Days between leaving and landing, by the destination's calendar.
+
+    0 when the flight lands the day it leaves -- always, on the scripted model.
+    Days before landing are travel days, and hotel nights start the night you
+    land. Capped so the trip keeps at least one day on the ground.
+    """
+    if not flight or flight.get("no_flight"):
+        return 0
+    try:
+        landed = date.fromisoformat(str(flight.get("arrive", ""))[:10])
+    except ValueError:
+        return 0
+    start = _parse_date(brief.get("start_date", ""))
+    n_days = max(1, int(brief.get("nights", 3)))
+    return max(0, min(n_days - 1, (landed - start).days))
+
+
+def _flight_item(flight: dict[str, Any], shortlist: dict[str, Any], d: int) -> dict[str, Any]:
+    """A travel day's entry: the flight itself, or still being on the way."""
+    arrive = str(flight.get("arrive", ""))
+    landed = _parse_date(arrive)
+    lands = f"lands {landed:%a %b} {landed.day} at {arrive[-5:]} local time"
+    if d > 0:
+        return {"kind": "flight", "start": "", "end": "", "name": "Still on the way",
+                "note": lands[0].upper() + lands[1:]}
+    stops = int(flight.get("stops", 0) or 0)
+    route = "nonstop" if not stops else (
+        f"{stops} stop{'s' if stops != 1 else ''}"
+        + (f" via {flight['via']}" if flight.get("via") else ""))
+    depart = str(flight.get("depart", ""))[-5:]
+    to = (shortlist.get("airport") or {}).get("name") or shortlist.get("destination", "")
+    return {"kind": "flight", "start": depart, "end": "", "name": f"Fly to {to}",
+            "note": f"{flight.get('carrier', '')}, {route}; leaves {depart} local time, {lands}"}
+
+
+def _near_km(a: dict, b: dict) -> bool:
+    """Catalog cities: a day trip's companion stop is within the day-trip radius."""
+    return haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) <= _DAY_TRIP_KM
+
+
 def _assign(
     pois: list[dict],
     n_days: int,
@@ -89,11 +138,15 @@ def _assign(
     hotel: dict,
     tier: Callable[[dict], int],
     allowed_bands: list[set[str]],
-    centre: tuple[float, float],
+    is_trip: Callable[[dict], bool],
+    first_day: int = 0,
+    near: Callable[[dict, dict], bool] | None = None,
+    fit_local: bool = False,
 ) -> tuple[list[list[dict]], list[dict]]:
     days: list[list[dict]] = [[] for _ in range(n_days)]
     trip_day = [False] * n_days
     unscheduled: list[dict] = []
+    near = near or _near_km
 
     def room(i: int) -> bool:
         return len(days[i]) < capacity[i]
@@ -101,8 +154,8 @@ def _assign(
     def load(i: int) -> float:
         return len(days[i]) / max(1, capacity[i])
 
-    def is_trip(p: dict) -> bool:
-        return haversine_km(centre[0], centre[1], p["lat"], p["lon"]) > _DAY_TRIP_KM
+    def hosts(i: int, p: dict) -> bool:
+        return capacity[i] > 0 and p["best_time"] in allowed_bands[i]
 
     def ok(i: int, p: dict) -> bool:
         if not room(i) or p["best_time"] not in allowed_bands[i]:
@@ -117,22 +170,40 @@ def _assign(
             trip = daytime[0] if daytime else None
             if trip is not None:
                 before = time_rank(p["best_time"]) < time_rank(trip["best_time"])
-                near = haversine_km(trip["lat"], trip["lon"], p["lat"], p["lon"]) <= _DAY_TRIP_KM
-                if not (before or near):
+                if not (before or near(trip, p)):
                     return False
         return True
 
-    # 1. Day trips claim whole days, latest first (never the arrival day). A trip
-    #    the traveler wished for gets first pick.
+    # 1. Day trips claim whole days, latest first (never the landing day, nor a
+    #    travel day before it). A trip the traveler wished for gets first pick.
+    #    But a trip never takes the last day on which a local place of the same
+    #    or higher priority could still be seen: on a short trip, several
+    #    sights beat one long drive.
     trips = sorted((p for p in pois if is_trip(p)), key=tier)
     local = [p for p in pois if not is_trip(p)]
+    ground = range(first_day, n_days)
     for p in trips:
-        slots = [i for i in range(n_days - 1, 0, -1) if not days[i] and not trip_day[i]]
-        if slots and p["best_time"] in allowed_bands[slots[0]] | {"sunrise"}:
-            days[slots[0]].append(p)
-            trip_day[slots[0]] = True
-        else:
+        slots = [i for i in range(n_days - 1, first_day, -1) if not days[i] and not trip_day[i]]
+        if not slots or p["best_time"] not in allowed_bands[slots[0]] | {"sunrise"}:
             unscheduled.append(p)
+            continue
+        i = slots[0]
+        others = [j for j in ground if j != i and not trip_day[j]]
+        if any(tier(q) <= tier(p) and hosts(i, q) and not any(hosts(j, q) for j in others)
+               for q in local):
+            unscheduled.append(p)
+            continue
+        if fit_local:
+            # Nor may it leave too few stops for the local places ranked as
+            # high: a second day trip must not crowd out the city's own
+            # must-sees. A trip day still fits one of them, back in town.
+            needed = sum(1 for q in local
+                         if tier(q) <= tier(p) and any(hosts(j, q) for j in ground))
+            if needed > sum(capacity[j] for j in others) + sum(trip_day) + 1:
+                unscheduled.append(p)
+                continue
+        days[i].append(p)
+        trip_day[i] = True
 
     def centroid(i: int) -> tuple[float, float]:
         pts = days[i] or [hotel]
@@ -213,6 +284,12 @@ def plan_days(
     speed = float(shortlist.get("speed_factor", 1.0))
     food_pp = float(shortlist.get("daily_food_usd", 50.0))
     pace = prefs["pace"]
+    # A researched destination says which modes exist there and what they cost
+    # (geo._profile_leg). The catalog has no profile: distance bands apply.
+    transport = shortlist.get("transport")
+
+    def leg_between(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        return travel_leg(a, b, travelers=travelers, speed_factor=speed, transport=transport)
 
     base = shortlist.get("base_area") or {
         "name": shortlist.get("destination", "centre"),
@@ -233,14 +310,15 @@ def plan_days(
         else:
             pois.append(dict(p))
 
-    # ---- day 1 depends on when the plane lands
+    # ---- the first day on the ground depends on when the plane lands
+    if flight and flight.get("no_flight"):
+        flight = None  # an overland trip: no landing, no airport transfer
+    land = arrival_offset(flight, brief)  # days before it are spent travelling
     arrival = _arrival_minutes(flight)
     transfer = None
     day1_start = _DEFAULT_START
     if arrival is not None and shortlist.get("airport"):
-        transfer = travel_leg(
-            shortlist["airport"], hotel, travelers=travelers, speed_factor=speed
-        )
+        transfer = leg_between(shortlist["airport"], hotel)
         day1_start = arrival + _ARRIVAL_BUFFER_MIN + transfer["minutes"] + _CHECKIN_MIN
 
     suns = []
@@ -255,26 +333,43 @@ def plan_days(
 
     capacity = [pace] * n_days
     hours_left_d1 = max(0, _DAY_END - day1_start) / 60.0
-    # Arrival day is jet-lagged: lighter than a full day, one stop per ~3h left.
-    capacity[0] = max(0, min(pace - 1, int(hours_left_d1 / 3.0)))
+    # Landing day is jet-lagged: lighter than a full day, one stop per ~3h left.
+    capacity[land] = max(0, min(pace - 1, int(hours_left_d1 / 3.0)))
 
     # Which light-bands each day can still use.
     base_bands = set(_ALL_BANDS)
     if not prefs["early_ok"]:
         base_bands.discard("sunrise")
     allowed_bands = [set(base_bands) for _ in range(n_days)]
-    allowed_bands[0].discard("sunrise")  # you are on a plane
+    allowed_bands[land].discard("sunrise")  # you are on a plane
     if day1_start > 11 * 60:
-        allowed_bands[0] -= {"morning", "midday"}
+        allowed_bands[land] -= {"morning", "midday"}
     if day1_start > 16 * 60:
-        allowed_bands[0] -= {"afternoon", "anytime"}
-    golden_d1 = suns[0].get("_golden_pm_min")
+        allowed_bands[land] -= {"afternoon", "anytime"}
+    golden_d1 = suns[land].get("_golden_pm_min")
     if golden_d1 is not None and day1_start > golden_d1 - 20:
-        allowed_bands[0].discard("sunset")
+        allowed_bands[land].discard("sunset")
+    for d in range(land):  # still in the air
+        capacity[d] = 0
+        allowed_bands[d] = set()
 
-    centre = (float(shortlist.get("lat", hotel["lat"])), float(shortlist.get("lon", hotel["lon"])))
+    near = None  # catalog: within the day-trip radius (_near_km)
+    if transport is None:
+        centre = (float(shortlist.get("lat", hotel["lat"])),
+                  float(shortlist.get("lon", hotel["lon"])))
+
+        def is_trip(p: dict) -> bool:
+            return haversine_km(centre[0], centre[1], p["lat"], p["lon"]) > _DAY_TRIP_KM
+    else:
+        def is_trip(p: dict) -> bool:
+            return leg_between(hotel, p)["minutes"] > _DAY_TRIP_MIN
+
+        def near(a: dict, b: dict) -> bool:
+            return leg_between(a, b)["minutes"] <= _DAY_TRIP_MIN
+
     assigned, unscheduled = _assign(
-        pois, n_days, capacity, hotel, tailor.tier, allowed_bands, centre
+        pois, n_days, capacity, hotel, tailor.tier, allowed_bands, is_trip,
+        first_day=land, near=near, fit_local=transport is not None,
     )
 
     days_out: list[dict[str, Any]] = []
@@ -282,7 +377,8 @@ def plan_days(
 
     for d in range(n_days):
         day = start + timedelta(days=d)
-        sun = suns[d]
+        # On a travel day the destination's sunrise and sunset don't apply.
+        sun = suns[d] if d >= land else {}
         stops = _order(assigned[d], hotel)
 
         items: list[dict[str, Any]] = []
@@ -292,7 +388,9 @@ def plan_days(
         travel_min = 0
         walk_km = 0.0
 
-        if d == 0 and arrival is not None:
+        if d < land and flight:
+            items.append(_flight_item(flight, shortlist, d))
+        if d == land and arrival is not None:
             items.append({
                 "kind": "arrival",
                 "start": from_minutes(arrival),
@@ -309,9 +407,9 @@ def plan_days(
                 travel_min += transfer["minutes"]
 
         # First stop of the day: leave the hotel in time for its window.
-        cursor = day1_start if d == 0 else _DEFAULT_START
-        if stops and d > 0:
-            first_leg = travel_leg(hotel, stops[0], travelers=travelers, speed_factor=speed)
+        cursor = day1_start if d == land else _DEFAULT_START
+        if stops and d > land:
+            first_leg = leg_between(hotel, stops[0])
             pref, _ = window_for(stops[0]["best_time"], sun)
             cursor = int(min(_DEFAULT_START, max(4 * 60, pref - first_leg["minutes"])))
         if not prefs["early_ok"]:
@@ -321,7 +419,7 @@ def plan_days(
         lunch_done = False
 
         for stop in stops:
-            leg = travel_leg(prev, stop, travelers=travelers, speed_factor=speed)
+            leg = leg_between(prev, stop)
             arrive = cursor + leg["minutes"]
 
             pref, reason = window_for(stop["best_time"], sun)
@@ -399,14 +497,16 @@ def plan_days(
 
         back = None
         if prev is not hotel:
-            back = travel_leg(prev, hotel, travelers=travelers, speed_factor=speed)
+            back = leg_between(prev, hotel)
             transport_usd += back["cost_usd"]
             distance_km += back["distance_km"]
             travel_min += back["minutes"]
             if back["mode"] == "walk":
                 walk_km += back["distance_km"]
 
-        food_usd = round(food_pp * travelers * (0.6 if d == 0 else 1.0), 2)
+        # Nothing is spent on the ground while flying; the landing day is short.
+        food_share = 0.0 if d < land else 0.6 if d == land else 1.0
+        food_usd = round(food_pp * travelers * food_share, 2)
         day_total = round(activities_usd + transport_usd + food_usd, 2)
         ground_total += day_total
 
@@ -417,11 +517,15 @@ def plan_days(
                     if i["kind"] == "stop" and lo <= to_minutes(i["start"]) < hi]
             return ", ".join(hits) or "Free time"
 
+        if named:
+            title = " · ".join(named[:2])
+        else:
+            title = "Travel day" if d < land else "Arrival and settle in"
         days_out.append({
             "day": d + 1,
             "date": day.isoformat(),
             "weekday": day.strftime("%A"),
-            "title": " · ".join(named[:2]) if named else "Arrival and settle in",
+            "title": title,
             "sunrise": sun.get("sunrise"),
             "sunset": sun.get("sunset"),
             "golden_hour": sun.get("golden_evening_start"),

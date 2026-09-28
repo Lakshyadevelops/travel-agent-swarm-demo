@@ -195,11 +195,16 @@ const FALLBACK_CONFIG = {
   default_store: "valkey",
   model: "",
   has_api_key: true, // unknown: let the server decide
-  destinations: [],
   max_nights: 21,
   max_rounds: 3,
   scratchpad_ttl_s: 900,
 };
+
+// Ideas for the destination box. Any place can be typed: the team researches it.
+const DESTINATION_IDEAS = [
+  "Lisbon", "Kyoto", "Bali", "Amalfi Coast", "Banff", "Hanoi", "Reykjavik", "Cape Town",
+  "Marrakech", "Queenstown", "Oaxaca", "Scottish Highlands",
+];
 
 const app = {
   config: FALLBACK_CONFIG,
@@ -227,19 +232,27 @@ const roleClass = (who) => "role-" + (ROLES.has(who) ? who : "other");
 // Where each agent sits in the ADK graph, for the step detail pane.
 const AGENT_CONTEXT = {
   supervisor_intake:
-    "SequentialAgent step 1. Turns the brief into trip_constraints for the specialists.",
+    "SequentialAgent step 1. Turns the brief into trip_constraints for the specialists, with the destination and both airports identified by the model.",
   destination_scout:
-    "ParallelAgent branch inside the budget LoopAgent. Posts destination_shortlist.",
+    "ParallelAgent branch inside the budget LoopAgent. Researches places with Google Search, then posts destination_shortlist.",
   stay_agent:
-    "ParallelAgent branch inside the budget LoopAgent. Waits for the scout's shortlist, then posts stay_plan.",
+    "ParallelAgent branch inside the budget LoopAgent. Researches places to stay with Google Search, waits for the scout's shortlist, then posts stay_plan.",
   transit_agent:
-    "ParallelAgent branch inside the budget LoopAgent. Waits for stay_plan, then posts transit_plan.",
+    "ParallelAgent branch inside the budget LoopAgent. Researches flights with Google Search, waits for stay_plan, then posts transit_plan.",
   budget_guardrail:
     "Closes each LoopAgent round. Prices the whole plan, then either ends the loop or posts a budget_directive with price caps for the next round.",
   itinerary_assembly:
     "SequentialAgent step 3. Reads the whole scratchpad and assembles the day-by-day plan.",
   supervisor_final: "SequentialAgent step 4. Writes the customer-facing summary.",
 };
+
+// Live research: what each specialist looks up, and where its findings land.
+const RESEARCH_KINDS = [
+  { kind: "places", field: "destination_shortlist", noun: "places to see", title: "Places to see" },
+  { kind: "stays", field: "stay_plan", noun: "places to stay", title: "Places to stay" },
+  { kind: "flights", field: "transit_plan", noun: "flights", title: "Flights" },
+];
+const KIND_NOUN = Object.fromEntries(RESEARCH_KINDS.map((k) => [k.kind, k.noun]));
 
 // Experience tab wording: no store names, timings or jargon.
 const TEAM = [
@@ -304,7 +317,7 @@ function newRun(brief, store) {
       cursor: -1,
       selected: null,
       lastWrite: {}, // field -> step of its latest scratchpad write
-      counts: { session: 0, scratchpad: 0, waits: 0, errors: 0 },
+      counts: { session: 0, scratchpad: 0, waits: 0, research: 0, errors: 0 },
       rawLoadedFor: null,
     },
   };
@@ -511,12 +524,6 @@ function validationMessage(item) {
   const msg = String((item && item.msg) || "")
     .replace(/^Value error,\s*/i, "")
     .replace(/\.$/, "");
-  if (/not in the demo catalog/i.test(msg)) {
-    const list = app.config.destinations;
-    return list.length
-      ? `We can plan trips to ${list.join(", ")}.`
-      : "That destination isn't available yet.";
-  }
   if (/end_date must be after start_date/i.test(msg)) {
     return "Your return date must be after your departure date.";
   }
@@ -563,6 +570,7 @@ function buildTeam() {
   const rows = {};
   const row = (spec, sub) => {
     const state = h("span", { class: "visually-hidden" }, "waiting: ");
+    const search = h("div", { class: "tm-search" });
     const finding = h("div", { class: "tm-finding" });
     const say = h("div", { class: "tm-say" });
     const li = h(
@@ -576,11 +584,12 @@ function buildTeam() {
         h("span", { class: "tm-title" }, spec.title),
         spec.who ? h("span", { class: "tm-who" }, spec.who) : null,
       ),
+      search,
       finding,
       say,
       sub || null,
     );
-    rows[spec.agent] = { li, state, finding, say, status: "waiting" };
+    rows[spec.agent] = { li, state, search, finding, say, status: "waiting" };
     return li;
   };
   fill(
@@ -633,6 +642,7 @@ function experienceOnEvent(run, msg) {
     }
     case "blackboard":
       if (msg.action === "wrote") showFinding(run, msg);
+      else if (msg.action === "researching" || msg.action === "researched") showSearch(run, msg);
       break;
     case "state_op":
       if (msg.store === "session" && msg.op === "append" && msg.value) {
@@ -645,14 +655,39 @@ function experienceOnEvent(run, msg) {
       renderItinerary(run);
       break;
     case "error":
-      for (const row of Object.values(team)) if (row.status === "working") setStatus(row, "failed");
+      for (const row of Object.values(team)) {
+        if (row.status === "working") setStatus(row, "failed");
+        row.search.classList.remove("busy");
+      }
       syncResearch(team);
       $("team-status").textContent = "Planning stopped.";
       fill($("itinerary"), h("p", { class: "notice bad", role: "alert" }, msg.message || run.error));
+      // "We couldn't find that destination": say so where it can be fixed.
+      if (msg.category === "unknown_destination" || msg.category === "unknown_origin") {
+        showFormError(msg.message);
+      }
       break;
     default:
       break;
   }
+}
+
+/** A specialist researching its part of the trip with Google Search. */
+function showSearch(run, msg) {
+  const row = run.team[FIELD_AGENT[msg.field]];
+  if (!row) return;
+  if (msg.action === "researching") {
+    row.search.textContent = `${msg.detail || "Searching Google"}…`;
+    row.search.classList.add("busy");
+    $("team-status").textContent = "Researching your trip with Google Search…";
+    return;
+  }
+  row.search.classList.remove("busy");
+  const queries = Array.isArray(msg.queries) ? msg.queries.length : 0;
+  const sources = Array.isArray(msg.sources) ? msg.sources.length : 0;
+  row.search.textContent = msg.searched
+    ? `Searched Google · ${plural(queries, "search", "searches")} · ${plural(sources, "source")}`
+    : "No search needed";
 }
 
 /** Each agent's key finding, taken from what it posted to the scratchpad. */
@@ -767,6 +802,7 @@ function renderItinerary(run) {
       ? h("section", { class: "concierge" }, h("h3", {}, "From your concierge"), paragraphs(r.final_text))
       : null,
     factsGrid(it, r, within, overage),
+    sourcesSection(run),
     within
       ? null
       : h(
@@ -794,37 +830,117 @@ function fact(label, value, sub, tone) {
   );
 }
 
+/** "nonstop", "1 stop via TPE", "2 stops via DOH, LHR" */
+function route(f) {
+  if (!f.stops) return "nonstop";
+  return plural(Number(f.stops), "stop") + (f.via ? ` via ${f.via}` : "");
+}
+
 function factsGrid(it, r, within, overage) {
   const b = it.breakdown || {};
   const f = it.flight;
   const s = it.stay;
+  const overland = Boolean(f && f.no_flight);
   const rounds = Number(r.budget_rounds) || 1;
   let replans = "";
   if (rounds === 2) replans = "Re-planned once to fit";
   else if (rounds > 2) replans = `Re-planned ${rounds - 1} times to fit`;
+  // Hotel nights start the night you land, so an overnight flight books one fewer.
+  const nights = b.stay_nights ? ` (${plural(Number(b.stay_nights), "night")})` : "";
   return h(
     "dl",
     { class: "facts" },
     fact("Destination", it.destination, it.base_area ? `Base: ${it.base_area}` : ""),
-    fact(
-      "Flight",
-      f ? `${f.carrier} · ${money(f.price_usd)}` : "–",
-      f
-        ? `${dayTime(f.depart)} → ${dayTime(f.arrive)} · ${Number(f.duration_hours).toFixed(1)} h · ` +
-            (f.stops ? plural(f.stops, "stop") : "nonstop")
-        : "",
-    ),
+    overland
+      ? fact("Getting there", "No flight needed", "Close enough to travel overland")
+      : fact(
+          "Flight",
+          f ? `${f.carrier} · ${money(f.price_usd)}` : "–",
+          f
+            ? `${dayTime(f.depart)} → ${dayTime(f.arrive)} · ${Number(f.duration_hours).toFixed(1)} h · ${route(f)}`
+            : "",
+        ),
     fact(
       "Stay",
       s ? s.name : "–",
-      s ? `${s.neighborhood} · ${money(s.nightly_usd)}/night · ★ ${s.rating}` : "",
+      s
+        ? [s.kind && s.kind !== "hotel" ? capitalize(s.kind) : "", s.neighborhood, `${money(s.nightly_usd)}/night`, `★ ${s.rating}`]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
     ),
     fact(
       "Total",
       money(it.total_estimate_usd),
-      `flight ${money(b.flight_usd)} · stay ${money(b.stay_usd)} · on the ground ${money(b.ground_usd)}`,
+      [overland ? "" : `flight ${money(b.flight_usd)}`, `stay ${money(b.stay_usd)}${nights}`, `on the ground ${money(b.ground_usd)}`]
+        .filter(Boolean)
+        .join(" · "),
     ),
     fact("Budget", within ? "Within budget" : `Over by ${money(overage)}`, replans, within ? "ok" : "bad"),
+  );
+}
+
+/** A web page the research read: https only, in a new tab, no referrer. */
+function externalLink(uri, text) {
+  if (typeof uri !== "string" || !/^https:\/\//i.test(uri)) return null;
+  return h("a", { href: uri, target: "_blank", rel: "noopener noreferrer" }, text || uri);
+}
+
+/**
+ * Google's Search Suggestions for one research step. Google renders this HTML
+ * and its terms ask for it to be shown with grounded results. It is its own
+ * sandboxed document (main.py search_suggestions), so this page never parses it.
+ */
+function suggestionsFrame(runId, kind, title) {
+  return h("iframe", {
+    class: "suggestions",
+    src: `/api/search-suggestions/${encodeURIComponent(runId)}/${encodeURIComponent(kind)}`,
+    title: `Google Search suggestions for ${title.toLowerCase()}`,
+    sandbox: "allow-popups allow-popups-to-escape-sandbox",
+    referrerpolicy: "no-referrer",
+    loading: "lazy",
+  });
+}
+
+/** Where the live research came from: Google's suggestions, then the sources. */
+function sourcesSection(run) {
+  const pad = (run.result && run.result.scratchpad) || {};
+  const found = RESEARCH_KINDS.map((k) => ({ ...k, g: (pad[k.field] || {}).grounding })).filter(
+    (k) => k.g && k.g.searched,
+  );
+  if (!found.length) return null;
+  const seen = new Set();
+  const links = [];
+  for (const k of found) {
+    for (const src of Array.isArray(k.g.sources) ? k.g.sources : []) {
+      const a = src && !seen.has(src.title || src.uri) ? externalLink(src.uri, src.title) : null;
+      if (!a) continue;
+      seen.add(src.title || src.uri);
+      links.push(h("li", {}, a, h("span", { class: "src-kind" }, ` · ${k.noun}`)));
+    }
+  }
+  return h(
+    "section",
+    { class: "sources" },
+    h("h3", {}, "Researched with Google Search"),
+    h(
+      "p",
+      { class: "src-note" },
+      "Hotel rates and fares are typical prices found online, not quotes. Check before you book.",
+    ),
+    found.map((k) =>
+      h(
+        "div",
+        { class: "src-row" },
+        h("span", { class: "src-label" }, k.title),
+        k.g.suggestions && run.id
+          ? suggestionsFrame(run.id, k.kind, k.title)
+          : h("span", { class: "src-none" }, plural((k.g.queries || []).length, "search", "searches")),
+      ),
+    ),
+    links.length
+      ? h("details", { class: "src-links" }, h("summary", {}, `Sources (${links.length})`), h("ul", {}, links))
+      : null,
   );
 }
 
@@ -904,6 +1020,19 @@ function legEl(leg, to) {
 }
 
 function itemEls(i) {
+  if (i.kind === "flight") {
+    return h(
+      "div",
+      { class: "item flight" },
+      h("div", { class: "when" }, i.start || ""),
+      h(
+        "div",
+        { class: "what" },
+        h("strong", {}, `${ICON.flight} ${i.name}`),
+        i.note ? h("div", { class: "why" }, i.note) : null,
+      ),
+    );
+  }
   if (i.kind === "arrival") {
     return [
       h(
@@ -964,6 +1093,9 @@ function itemEls(i) {
 
 function dayCard(d) {
   const t = d.totals;
+  const items = d.items || [];
+  // A day spent in the air: just the flight, no sun times or ground totals.
+  const travel = items.length > 0 && items.every((i) => i.kind === "flight");
   const sun = [];
   if (d.sunrise) sun.push(`${ICON.sunrise} ${d.sunrise}`);
   if (d.sunset) sun.push(`${ICON.sunset} ${d.sunset}`);
@@ -971,7 +1103,7 @@ function dayCard(d) {
   if (!sun.length && d.daylight) sun.push(d.daylight);
   return h(
     "article",
-    { class: "day" },
+    { class: travel ? "day travel" : "day" },
     h(
       "header",
       { class: "day-head" },
@@ -984,14 +1116,14 @@ function dayCard(d) {
       h("span", { class: "sun" }, sun.join(" · ")),
     ),
     d.title ? h("p", { class: "day-title" }, d.title) : null,
-    h("div", { class: "items" }, (d.items || []).map(itemEls)),
+    h("div", { class: "items" }, items.map(itemEls)),
     d.return_leg
       ? [
           legEl(d.return_leg),
           h("div", { class: "item back" }, h("div", { class: "when" }), h("div", { class: "what" }, `Back to ${d.return_leg.to}`)),
         ]
       : null,
-    t
+    t && !travel
       ? h(
           "footer",
           { class: "day-foot" },
@@ -1004,10 +1136,13 @@ function dayCard(d) {
 
 /* ======================================================== Under the Hood */
 
+const WAIT_ACTIONS = new Set(["waited", "timed_out"]);
+const RESEARCH_ACTIONS = new Set(["researching", "researched"]);
+
 const isStep = (m) =>
   m.type === "state_op" ||
   m.type === "agent_step" ||
-  (m.type === "blackboard" && (m.action === "waited" || m.action === "timed_out"));
+  (m.type === "blackboard" && (WAIT_ACTIONS.has(m.action) || RESEARCH_ACTIONS.has(m.action)));
 
 function matchesFilter(step, filter) {
   const m = step.msg;
@@ -1015,7 +1150,8 @@ function matchesFilter(step, filter) {
     case "session":
       return m.type === "state_op" && m.store === "session";
     case "scratchpad":
-      return (m.type === "state_op" && m.store === "scratchpad") || m.type === "blackboard";
+      // Store ops, plus the waits that decide when a peer's post gets read.
+      return (m.type === "state_op" && m.store === "scratchpad") || (m.type === "blackboard" && WAIT_ACTIONS.has(m.action));
     case "agents":
       return m.type !== "state_op";
     default:
@@ -1099,6 +1235,7 @@ function setHoodStatus(status) {
 function renderCounts(run) {
   const c = run.hood.counts;
   const parts = [plural(c.session, "session op"), plural(c.scratchpad, "scratchpad op")];
+  if (c.research) parts.push(plural(c.research, "Google Search step"));
   if (c.waits) parts.push(plural(c.waits, "wait"));
   if (c.errors) parts.push(plural(c.errors, "failed op"));
   $("hood-counts").textContent = parts.join(" · ");
@@ -1194,7 +1331,8 @@ function addStep(run, msg) {
     if (msg.error) hood.counts.errors += 1;
     if (msg.store === "scratchpad" && msg.op === "write" && msg.field) hood.lastWrite[msg.field] = step;
   } else if (msg.type === "blackboard") {
-    hood.counts.waits += 1;
+    if (WAIT_ACTIONS.has(msg.action)) hood.counts.waits += 1;
+    else if (msg.action === "researched") hood.counts.research += 1;
   }
   $("timeline").append(step.el);
 }
@@ -1219,6 +1357,19 @@ function timelineRow(step) {
         { class: "tl-main" },
         h("span", { class: "tl-mark", "aria-hidden": "true" }, m.phase === "start" ? "▶" : "■"),
         `${m.label || m.agent} ${m.phase === "start" ? "started" : "finished"}`,
+      ),
+    );
+  } else if (m.type === "blackboard" && RESEARCH_ACTIONS.has(m.action)) {
+    const noun = KIND_NOUN[m.kind] || m.field;
+    li.classList.add("tl-research");
+    cells.push(
+      h(
+        "span",
+        { class: "tl-main" },
+        h("span", { class: "tl-mark", "aria-hidden": "true" }, m.action === "researching" ? "⌕" : "✓"),
+        m.action === "researching"
+          ? `${m.agent} searching Google for ${noun}`
+          : `${m.agent} researched ${noun} · ${m.detail || ""}`,
       ),
     );
   } else if (m.type === "blackboard") {
@@ -1679,9 +1830,83 @@ function primitiveFor(run, m) {
   return text;
 }
 
+/** A specialist's Google Search research: how it works and what it found. */
+function renderResearchDetail(run, step, head, el) {
+  const m = step.msg;
+  const noun = KIND_NOUN[m.kind] || m.field;
+  const label = (text) => h("div", { class: "dt-label" }, text);
+  const at = `round ${(Number(m.round) || 0) + 1} · at ${offset(m.t_ms)}`;
+  if (m.action === "researching") {
+    head.textContent = `Step ${step.n} · ${m.agent} started researching ${noun}`;
+    fill(
+      el,
+      h(
+        "p",
+        {},
+        `The ${m.agent} agent looks up ${noun} for this trip with Google Search. It starts before ` +
+          "waiting on any peer, so the three specialists research in parallel. Nothing is stored " +
+          "in the session or scratchpad until the findings are posted.",
+      ),
+      h("p", { class: "facts-line" }, at),
+    );
+    return;
+  }
+  head.textContent = `Step ${step.n} · ${m.agent} researched ${noun}`;
+  if (!m.searched) {
+    fill(
+      el,
+      h(
+        "p",
+        {},
+        m.kind === "flights"
+          ? "No search needed: the trip starts close enough to the destination to travel overland."
+          : "The model answered without running a search, so there are no sources to show.",
+      ),
+      h("p", { class: "facts-line" }, at),
+    );
+    return;
+  }
+  const queries = Array.isArray(m.queries) ? m.queries : [];
+  const sources = (Array.isArray(m.sources) ? m.sources : [])
+    .map((s) => (s ? externalLink(s.uri, s.title) : null))
+    .filter(Boolean);
+  const facts = [];
+  if (m.search_s !== undefined && m.search_s !== null) facts.push(`search ${Number(m.search_s).toFixed(1)} s`);
+  if (m.structure_s !== undefined && m.structure_s !== null) facts.push(`structure ${Number(m.structure_s).toFixed(1)} s`);
+  facts.push(at);
+  fill(
+    el,
+    h(
+      "p",
+      {},
+      "Two model calls. The first is grounded with Google Search and writes research notes; the " +
+        "second turns the notes into a fixed JSON schema (search can't run in a call that has a " +
+        "response schema). The server then checks every entry, such as coordinates near the " +
+        "destination, prices within bounds and flight times that are physically possible, " +
+        "before the agent posts to the scratchpad.",
+    ),
+    h(
+      "p",
+      {},
+      "Findings are shared within this run only, so a budget re-plan reuses them without " +
+        "searching again. Nothing is kept for later runs.",
+    ),
+    h("p", { class: "facts-line" }, facts.join(" · ")),
+    queries.length ? [label("Searches Google ran"), h("ul", { class: "queries" }, queries.map((q) => h("li", {}, q)))] : null,
+    sources.length ? [label("Sources read"), h("ul", { class: "src-list" }, sources.map((a) => h("li", {}, a)))] : null,
+    m.suggestions && run.id
+      ? [label("Google Search suggestions"), suggestionsFrame(run.id, m.kind, noun)]
+      : null,
+  );
+}
+
 function renderDetail(run, view, step) {
   const head = $("detail-heading");
   const el = $("detail");
+  // A research step's detail never changes once drawn. Redrawing it on every
+  // streamed event would reload its suggestions frame each time.
+  const shown = el.dataset.shown;
+  delete el.dataset.shown;
   if (!step) {
     head.textContent = "Step detail";
     fill(
@@ -1698,6 +1923,12 @@ function renderDetail(run, view, step) {
     if (!started && m.duration_ms !== undefined && m.duration_ms !== null) facts.push(`took ${duration(m.duration_ms)}`);
     facts.push(`at ${offset(m.t_ms)}`);
     fill(el, AGENT_CONTEXT[m.agent] ? h("p", {}, AGENT_CONTEXT[m.agent]) : null, h("p", { class: "facts-line" }, facts.join(" · ")));
+    return;
+  }
+  if (m.type === "blackboard" && RESEARCH_ACTIONS.has(m.action)) {
+    const key = `${run.id}:${m.seq}`;
+    if (shown !== key) renderResearchDetail(run, step, head, el);
+    el.dataset.shown = key;
     return;
   }
   if (m.type === "blackboard") {
@@ -1946,7 +2177,8 @@ async function loadConfig() {
   if (ids.includes(saved)) app.store = saved;
   else app.store = ids.includes(app.config.default_store) ? app.config.default_store : ids[0];
 
-  fill($("dest-list"), app.config.destinations.map((d) => h("option", { value: d })));
+  // Any place works; the list is only inspiration for the input's suggestions.
+  fill($("dest-list"), DESTINATION_IDEAS.map((d) => h("option", { value: d })));
   const warn = $("config-warning");
   warn.textContent = app.config.has_api_key
     ? ""

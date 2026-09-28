@@ -8,7 +8,7 @@ whole reading in benchmark mode, where the model is a stub.
 The reading then travels on the blackboard:
 
     trip_constraints        supervisor's reading of the note
-      -> scout              may add real places the catalog lacks for a wish
+      -> scout              on the live model, researches places for each wish
     destination_shortlist   carries the reading as "prefs"
       -> budget, itinerary  both plan with it, so their totals agree
 
@@ -457,9 +457,9 @@ class Tailoring:
         return out
 
 
-# ------------------------------------------------------------ scout extras
-MAX_EXTRA_PLACES = 3
-EXTRA_MAX_KM = 150.0  # "in or near the city": a long day trip at most
+# ------------------------------------------------------------ researched places
+MAX_PLACES = 16
+PLACE_MAX_KM = 150.0  # "in or near the destination": a long day trip at most
 _SAME_PLACE_KM = 0.15
 _DURATION_RANGE = (20.0, 480.0)
 _COST_RANGE = (0.0, 300.0)
@@ -511,35 +511,43 @@ def _coord(value: Any, limit: float) -> float | None:
 
 
 def _same_place(name: str, lat: float, lon: float, other: dict[str, Any]) -> bool:
+    """The same name (or one inside the other), or the same spot under a similar name.
+
+    Nearness alone is not enough: distinct sights can sit across the street
+    from each other (Ubud Palace and Ubud Art Market).
+    """
     a, b = name.casefold(), str(other.get("name", "")).casefold()
     if a == b or (min(len(a), len(b)) >= 6 and (a in b or b in a)):
         return True
     try:
-        return haversine_km(lat, lon, float(other["lat"]), float(other["lon"])) < _SAME_PLACE_KM
+        km = haversine_km(lat, lon, float(other["lat"]), float(other["lon"]))
     except (KeyError, TypeError, ValueError):
         return False
+    return km < _SAME_PLACE_KM and len(_tokens(a) & _tokens(b)) >= 2
 
 
-def clean_extra_places(
+def clean_places(
     raw: Any,
     *,
-    catalog: list[dict[str, Any]],
     centre: tuple[float, float],
     prefs: dict[str, Any],
+    known: list[dict[str, Any]] | None = None,
+    limit: int = MAX_PLACES,
+    max_km: float = PLACE_MAX_KM,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """Validate places proposed by the scout model.
+    """Validate places proposed by a model (the scout's research).
 
     Returns (accepted, rejected). Accepted places are catalog-shaped points of
-    interest tagged `added_by="scout"` and `for_you=<the wish or interest they
-    serve>`. Rejected ones carry a short reason, so the model -- and a
-    developer reading the blackboard -- can see why.
+    interest. One that serves a traveler's wish is also tagged
+    `added_by="scout"` and `for_you=<the wish>`, so the planner ranks it first
+    and a blanket skip ("no museums") does not drop it. Rejected ones carry a
+    short reason, so a developer reading the blackboard can see why.
     """
     tailor = Tailoring(prefs)
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
     items = raw if isinstance(raw, list) else ([] if raw is None else [raw])
     for item in items:
-        # ADK hands over a WishPlace, or the raw dict when validation failed.
         d = item.model_dump() if isinstance(item, BaseModel) else item
         name = clean_text(d.get("name"), 80) if isinstance(d, dict) else ""
 
@@ -549,21 +557,18 @@ def clean_extra_places(
         if not name:
             reject("not a named place")
             continue
-        if not (tailor.wishes or tailor.interests):
-            reject("the traveler stated no preferences to serve")
-            continue
-        if len(accepted) >= MAX_EXTRA_PLACES:
-            reject(f"only {MAX_EXTRA_PLACES} extra places are allowed")
+        if len(accepted) >= limit:
+            reject(f"only {limit} places are kept")
             continue
         lat, lon = _coord(d.get("lat"), 90.0), _coord(d.get("lon"), 180.0)
-        if lat is None or lon is None:
+        if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
             reject("invalid coordinates")
             continue
         km = haversine_km(centre[0], centre[1], lat, lon)
-        if km > EXTRA_MAX_KM:
-            reject(f"{km:.0f} km from the city, too far")
+        if km > max_km:
+            reject(f"{km:.0f} km from the destination, too far")
             continue
-        if any(_same_place(name, lat, lon, p) for p in [*catalog, *accepted]):
+        if any(_same_place(name, lat, lon, p) for p in [*(known or []), *accepted]):
             reject("already on the list")
             continue
         category = to_category(d.get("category")) or "experience"
@@ -573,11 +578,7 @@ def clean_extra_places(
         if wish is None and category in tailor.avoid:
             reject(f"the traveler asked to skip {CATEGORY_LABEL[category]}")
             continue
-        reason = wish or (CATEGORY_LABEL[category] if category in tailor.wanted else None)
-        if reason is None:
-            reject("not tied to anything the traveler asked for")
-            continue
-        accepted.append({
+        place = {
             "name": name,
             "lat": round(lat, 5),
             "lon": round(lon, 5),
@@ -586,7 +587,9 @@ def clean_extra_places(
             "duration_min": int(round(_number(d.get("duration_min"), *_DURATION_RANGE, 90.0))),
             "cost_usd": round(_number(d.get("cost_usd"), *_COST_RANGE, 0.0), 2),
             "tip": clean_text(d.get("tip"), 140),
-            "added_by": "scout",
-            "for_you": reason,
-        })
+        }
+        if wish is not None:
+            place["added_by"] = "scout"
+            place["for_you"] = wish
+        accepted.append(place)
     return accepted, rejected

@@ -57,6 +57,53 @@ _MODES: tuple[tuple[float, str, float, float, float], ...] = (
 # rivers and one-way systems.
 _DETOUR = 1.28
 
+# Researched destinations (live model) carry a transport profile: whether
+# visitors can use a metro and trains, and what transit and taxis cost there.
+# With one, a leg uses a mode that exists (no phantom metro in Bali) at local
+# prices. Without one -- the benchmark catalog -- the bands above apply as-is.
+_WALK_KM = 1.2
+_METRO_KM = 10.0
+_RAIL_FROM_KM = 30.0  # below this a train rarely beats a taxi door to door
+_TAXI_SEATS = 4
+_HIGHWAY_KMH = 50.0  # a long road leg is mostly out of town
+# Visitors take cabs where they are cheap and transit where they are not: with
+# a metro, a mid-range ride that would cost more than this goes by metro.
+_TAXI_SPLURGE_USD = 25.0
+
+
+def _positive(value: Any, default: float) -> float:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) and f > 0 else default
+
+
+def _profile_leg(
+    distance: float, transport: dict[str, Any], travelers: int, speed_factor: float
+) -> tuple[str, float, float]:
+    """(mode, minutes, cost_usd) under a destination's transport profile.
+
+    Road traffic (`speed_factor`) slows taxis, not trains or the metro.
+    """
+    fare = _positive(transport.get("transit_fare_usd"), 2.5)
+    per_km = _positive(transport.get("taxi_usd_per_km"), 1.5)
+    if distance <= _WALK_KM:
+        return "walk", distance / 4.6 * 60.0, 0.0
+    if distance > _RAIL_FROM_KM and transport.get("rail"):
+        return "rail", 20.0 + distance / 75.0 * 60.0, max(3 * fare, 0.12 * distance) * travelers
+    taxi = max(3.0, per_km * distance) * math.ceil(travelers / _TAXI_SEATS)
+    if transport.get("metro") and (
+        distance <= _METRO_KM or (distance <= _RAIL_FROM_KM and taxi > _TAXI_SPLURGE_USD)
+    ):
+        # Past the centre, longer rides run on faster express or suburban lines.
+        far = max(0.0, distance - _METRO_KM)
+        minutes = 6.0 + (distance - far) / 22.0 * 60.0 + far / 40.0 * 60.0
+        return "metro", minutes, fare * (1.5 if far else 1.0) * travelers
+    kmh = (30.0 if distance <= _RAIL_FROM_KM else _HIGHWAY_KMH) * speed_factor
+    minutes = 4.0 + distance / max(1.0, kmh) * 60.0
+    return "taxi", minutes, taxi
+
 
 def travel_leg(
     origin: dict[str, Any],
@@ -64,24 +111,30 @@ def travel_leg(
     *,
     travelers: int = 1,
     speed_factor: float = 1.0,
+    transport: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Estimate the hop between two places.
 
     `speed_factor` scales the effective speed for city-specific traffic: Mexico
-    City's surface traffic is not Reykjavik's.
+    City's surface traffic is not Reykjavik's. `transport` is a researched
+    destination's profile (see _profile_leg).
     """
     straight = haversine_km(
         float(origin["lat"]), float(origin["lon"]),
         float(dest["lat"]), float(dest["lon"]),
     )
     distance = straight * _DETOUR
+    travelers = max(1, travelers)
 
-    for max_km, mode, kmh, overhead, fare in _MODES:
-        if distance <= max_km:
-            break
-
-    effective_kmh = max(1.0, kmh * (speed_factor if mode != "walk" else 1.0))
-    minutes = overhead + (distance / effective_kmh) * 60.0
+    if transport is not None:
+        mode, minutes, cost = _profile_leg(distance, transport, travelers, speed_factor)
+    else:
+        for max_km, mode, kmh, overhead, fare in _MODES:
+            if distance <= max_km:
+                break
+        effective_kmh = max(1.0, kmh * (speed_factor if mode != "walk" else 1.0))
+        minutes = overhead + (distance / effective_kmh) * 60.0
+        cost = fare * travelers
 
     return {
         "from": origin.get("name", ""),
@@ -89,7 +142,7 @@ def travel_leg(
         "distance_km": round(distance, 2),
         "minutes": int(round(minutes)),
         "mode": mode,
-        "cost_usd": round(fare * max(1, travelers), 2),
+        "cost_usd": round(cost, 2),
     }
 
 

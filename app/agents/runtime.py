@@ -30,3 +30,9 @@ WRITES_PER_STEP: ContextVar[int] = ContextVar("writes_per_step", default=1)
 
 # Emits step events to the SSE stream feeding the UI's live execution log.
 STEP_SINK: ContextVar[object | None] = ContextVar("step_sink", default=None)
+
+# True on the live model: specialists research the destination with Google
+# Search (providers/research.py). False for the scripted model (benchmarks and
+# tests), which plans from the curated catalog with no network calls. Either
+# way the tools issue the same store operations.
+LIVE_RESEARCH: ContextVar[bool] = ContextVar("live_research", default=False)
