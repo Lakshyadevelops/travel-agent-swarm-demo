@@ -802,7 +802,6 @@ function renderItinerary(run) {
       ? h("section", { class: "concierge" }, h("h3", {}, "From your concierge"), paragraphs(r.final_text))
       : null,
     factsGrid(it, r, within, overage),
-    sourcesSection(run),
     within
       ? null
       : h(
@@ -890,6 +889,7 @@ function externalLink(uri, text) {
  * Google's Search Suggestions for one research step. Google renders this HTML
  * and its terms ask for it to be shown with grounded results. It is its own
  * sandboxed document (main.py search_suggestions), so this page never parses it.
+ * Shown in the Under the hood panel.
  */
 function suggestionsFrame(runId, kind, title) {
   return h("iframe", {
@@ -900,48 +900,6 @@ function suggestionsFrame(runId, kind, title) {
     referrerpolicy: "no-referrer",
     loading: "lazy",
   });
-}
-
-/** Where the live research came from: Google's suggestions, then the sources. */
-function sourcesSection(run) {
-  const pad = (run.result && run.result.scratchpad) || {};
-  const found = RESEARCH_KINDS.map((k) => ({ ...k, g: (pad[k.field] || {}).grounding })).filter(
-    (k) => k.g && k.g.searched,
-  );
-  if (!found.length) return null;
-  const seen = new Set();
-  const links = [];
-  for (const k of found) {
-    for (const src of Array.isArray(k.g.sources) ? k.g.sources : []) {
-      const a = src && !seen.has(src.title || src.uri) ? externalLink(src.uri, src.title) : null;
-      if (!a) continue;
-      seen.add(src.title || src.uri);
-      links.push(h("li", {}, a, h("span", { class: "src-kind" }, ` · ${k.noun}`)));
-    }
-  }
-  return h(
-    "section",
-    { class: "sources" },
-    h("h3", {}, "Researched with Google Search"),
-    h(
-      "p",
-      { class: "src-note" },
-      "Hotel rates and fares are typical prices found online, not quotes. Check before you book.",
-    ),
-    found.map((k) =>
-      h(
-        "div",
-        { class: "src-row" },
-        h("span", { class: "src-label" }, k.title),
-        k.g.suggestions && run.id
-          ? suggestionsFrame(run.id, k.kind, k.title)
-          : h("span", { class: "src-none" }, plural((k.g.queries || []).length, "search", "searches")),
-      ),
-    ),
-    links.length
-      ? h("details", { class: "src-links" }, h("summary", {}, `Sources (${links.length})`), h("ul", {}, links))
-      : null,
-  );
 }
 
 function whyThisPlan(it) {
