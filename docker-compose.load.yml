@@ -1,0 +1,57 @@
+# Prod-like "small instance" profile for the concurrent-user campaign.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --force-recreate --wait valkey postgres
+#
+# Both stores get the same envelope (default 4 vCPU / 2 GB) and are configured
+# the way a developer would for an agent-state workload at that size. Durability
+# stays as each engine ships -- Postgres synchronous_commit=on, Valkey's default
+# RDB snapshots and no AOF -- because that difference is what's being priced.
+#
+# Sizing is not fixed. To try a bigger instance, set these before `up` (keep
+# the memory-derived values at ~75% / ~25% of the RAM cap):
+#   LOAD_STORE_CPUS=4.0  LOAD_STORE_MEM=2G  LOAD_VALKEY_MAXMEMORY=1536mb
+#   LOAD_VALKEY_IO_THREADS=4  LOAD_PG_SHARED_BUFFERS=512MB  LOAD_PG_CACHE=1536MB
+#   LOAD_PG_WORKERS=4
+#
+# Postgres values: PGTune "web application" profile for 4 CPU / 2 GB / SSD /
+# 100 connections. Valkey: maxmemory at ~75% of RAM (room for the snapshot
+# fork's copy-on-write), and io-threads so it can use more than one core.
+
+x-load-caps: &load-caps
+  deploy:
+    resources:
+      limits:
+        cpus: "${LOAD_STORE_CPUS:-4.0}"
+        memory: "${LOAD_STORE_MEM:-2G}"
+
+services:
+  valkey:
+    command: ["valkey-server",
+              "--maxmemory", "${LOAD_VALKEY_MAXMEMORY:-1536mb}",
+              "--maxmemory-policy", "allkeys-lru",
+              "--io-threads", "${LOAD_VALKEY_IO_THREADS:-4}"]
+    <<: *load-caps
+
+  postgres:
+    command: ["postgres",
+              "-c", "max_connections=100",
+              "-c", "shared_buffers=${LOAD_PG_SHARED_BUFFERS:-512MB}",
+              "-c", "effective_cache_size=${LOAD_PG_CACHE:-1536MB}",
+              "-c", "maintenance_work_mem=128MB",
+              "-c", "work_mem=2621kB",
+              "-c", "checkpoint_completion_target=0.9",
+              "-c", "wal_buffers=16MB",
+              "-c", "min_wal_size=1GB",
+              "-c", "max_wal_size=4GB",
+              "-c", "default_statistics_target=100",
+              "-c", "random_page_cost=1.1",
+              "-c", "effective_io_concurrency=200",
+              "-c", "huge_pages=off",
+              "-c", "max_worker_processes=${LOAD_PG_WORKERS:-4}",
+              "-c", "max_parallel_workers=${LOAD_PG_WORKERS:-4}",
+              "-c", "max_parallel_workers_per_gather=2",
+              "-c", "max_parallel_maintenance_workers=2"]
+    # Docker's default /dev/shm is 64 MB; Postgres uses it for parallel-query
+    # shared memory.
+    shm_size: 256mb
+    <<: *load-caps

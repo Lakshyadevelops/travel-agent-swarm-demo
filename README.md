@@ -52,14 +52,14 @@ docker compose up -d            # stores listen on 127.0.0.1 only
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # add GOOGLE_API_KEY: the UI always plans with live Gemini
 .venv/bin/python -m uvicorn app.main:app --port 8080
-.venv/bin/python -m pytest -q   # ~200 tests; scripted model and canned research, no API calls
+.venv/bin/python -m pytest -q   # ~217 tests; scripted model and canned research, no API calls
 ```
 
 The UI has two tabs, one per audience. One event stream per run feeds both.
 - **Experience** (customer demo):
   - The trip form, with structured fields plus free text. Any destination.
   - The travel team's progress in plain language. Each agent shows its key finding and what it searched for, and on budget re-plans shows *"Over by $300. Asking the team for cheaper options (round 2 of 3)"*.
-  - The finished day-by-day itinerary, including travel days for long flights, with *Researched with Google Search* (Google's Search Suggestions and the sources).
+  - The finished day-by-day itinerary, including travel days for long flights. The searches, sources and Google's Search Suggestions behind it are in *Under the Hood*.
   - No timings, store names or model settings.
 - **Under the Hood** (developers):
   - **Timeline:** every session and scratchpad operation of the run, plus agent start/finish, Google Search research steps and blackboard waits.
@@ -78,7 +78,9 @@ The UI runs no benchmarks. All of these use the scripted model, so they make no 
 | Script | What it measures |
 |---|---|
 | `scripts/bench.sh` | Single session, interleaved A/B (Valkey vs Postgres) with warm-ups discarded and a bootstrap CI, then the 1/10/100 writes-per-step sweep. Wraps `scripts/bench.py` (`bench`, `sweep`, `probe`). |
-| `scripts/load_campaign.sh` | Concurrent users (below), with recorded Gemini latency replayed. |
+| `scripts/load_campaign.sh` | Concurrent users on the demo's 1 CPU / 256 MB stores (results below), with recorded Gemini latency replayed. |
+| `scripts/load_campaign_scale.sh` | 300 / 1,000 / 2,000 concurrent users: a small Valkey vs a small Postgres, both 4 vCPU / 2 GB with prod-like configs (`docker-compose.load.yml`), on the same machine. Restores the demo profile afterwards. |
+| `scripts/load_campaign_matrix.sh` | The full grid (results below): both stores at 2 and 4 vCPU, 1 / 10 / 100 / 300 / 1,000 / 3,000 users, 1 and 10 writes per step. About 5.5 h. `scripts/load_matrix_table.py` merges any set of runs into one table. |
 | `scripts/calibrate_llm.py` | Records real Gemini latency for the replay (makes API calls). |
 
 ## Load testing without spending API quota
@@ -87,11 +89,59 @@ The UI runs no benchmarks. All of these use the scripted model, so they make no 
    `scripts/calibrate_llm.py --runs 8`. That is about 120 Gemini calls, and it appends to `runs/llm_trace.jsonl`.
    A trace from 8 real `gemini-3.5-flash` sessions is already committed at `results/llm_trace.jsonl` and is used automatically.
 2. **Replay:** the scripted fake model waits for a recorded latency pair from the same agent role before each response. The load test makes no API calls.
-3. **Drive load:** run `scripts/loadtest.py --arms valkey,postgres --users 10,100,300,600 --writes 1`. It simulates closed-loop virtual users across several worker processes.
+3. **Drive load:** run `scripts/loadtest.py --arms valkey,postgres --users 10,100,300,600 --writes 1`. It simulates closed-loop virtual users across worker processes (about 100 users each by default, `--procs auto`).
    - Session *i* of user *u* gets the same trip and the same replayed latencies on every arm. Deltas are computed on these matched sessions, with a bootstrap 95% CI.
-   - Store CPU and memory, and the load generator's own CPU, are recorded next to latency.
+   - Store CPU and memory, the load generator's own CPU, machine CPU and each worker's event-loop lag are recorded next to latency.
+   - **A level is marked client-bound** when the event-loop lag p99 exceeds 100 ms or the machine averages over 85% CPU. At that point the load generator, not the store, is setting the latency, so the level isn't a store result.
+   - The stores stay at whatever size they were started with. The Postgres connection budget is read from the server (`max_connections` − 10, split across workers). Each run records store sizes and settings, host cores and the git commit in `results.json`, and writes a `summary.md`.
+   - Size the prod-like profile with `LOAD_STORE_CPUS`, `LOAD_STORE_MEM` and friends (see the header of `docker-compose.load.yml`).
 
-## Results (end-to-end latency per planning session, ~37 s median)
+## Results: 1 to 3,000 users on 2 vCPU and 4 vCPU stores (2 GB each, prod-like configs)
+
+`scripts/load_campaign_matrix.sh`, on a 64-core host. End-to-end latency per planning session (~37 s median, mostly replayed model time). Every level ran with zero failed sessions and none was client-bound (event-loop lag p99 ≤ 9 ms, machine CPU ≤ 25%). The 1- and 10-user levels were measured for 8 min (n = 11 and 121 sessions per store), the others for 3 min (n = 466 to 13,700). Gap = Valkey − Postgres, paired median on the same trips with a bootstrap 95% CI. Slim per-run data: `results/load_matrix/`; full tables: `results/load_matrix_summary.md`; logs: `results/campaign_matrix*.log`.
+
+**App as built (1 scratchpad write per agent step).** Median seconds per session.
+
+| Users | Valkey 2 vCPU | Postgres 2 vCPU | Gap at 2 vCPU | Valkey 4 vCPU | Postgres 4 vCPU | Gap at 4 vCPU |
+|---|---|---|---|---|---|---|
+| 1 | 36.88 | 36.92 | −40 ms [−52, −21] | 36.89 | 36.92 | −35 ms [−100, −24] |
+| 10 | 36.97 | 37.00 | −28 ms, not significant | 36.98 | 37.00 | −26 ms, not significant |
+| 100 | 37.48 | 37.51 | −23 ms [−43, −18] | 37.48 | 37.52 | −39 ms [−87, −27] |
+| 300 | 37.35 | 37.37 | −21 ms, not significant | 37.34 | 37.36 | −28 ms [−53, −8] |
+| 1,000 | 37.23 | 37.28 | −42 ms [−54, −23] | 37.23 | 37.28 | −43 ms [−59, −26] |
+| 2,000 | 37.35 | 37.41 | −65 ms [−83, −44] | 37.35 | 37.39 | −35 ms [−53, −28] |
+| 3,000 | 37.36 | **38.17** | **−808 ms** [−856, −762] | 37.36 | 37.41 | −50 ms [−55, −33] |
+
+Store CPU at 3,000 users: Valkey 24% of one core at either size; Postgres 174% of its 2 vCPUs (saturating, hence the 0.8 s) and 162% at 4 vCPU.
+
+**Chatty agents (10 writes per step).**
+
+| Users | Valkey 2 vCPU | Postgres 2 vCPU | Gap at 2 vCPU | Valkey 4 vCPU | Postgres 4 vCPU | Gap at 4 vCPU |
+|---|---|---|---|---|---|---|
+| 1 | 36.91 | 36.99 | −75 ms [−148, −65] | 36.91 | 36.98 | −78 ms [−241, −58] |
+| 10 | 36.99 | 37.07 | −79 ms [−99, −20] | 36.98 | 37.06 | −76 ms, not significant |
+| 100 | 37.51 | 37.58 | −71 ms [−118, −38] | 37.50 | 37.58 | −77 ms [−116, −38] |
+| 300 | 37.36 | 37.46 | −100 ms [−135, −76] | 37.36 | 37.47 | −105 ms [−139, −72] |
+| 1,000 | 37.27 | 37.52 | −258 ms [−290, −206] | 37.26 | 37.39 | −136 ms [−154, −112] |
+| 2,000 | 37.38 | **66.91** | **−29.0 s** [−29.2, −28.8] | 37.39 | 37.57 | −177 ms [−207, −162] |
+| 3,000 | 37.42 | **99.89** | **−54.0 s** [−54.7, −53.5] | 37.41 | **51.69** | **−14.3 s** [−14.4, −14.2] |
+
+Store CPU and memory at the top levels (avg CPU as % of one core / max memory):
+
+| Workload | Users | Valkey 2 vCPU | Postgres 2 vCPU | Valkey 4 vCPU | Postgres 4 vCPU |
+|---|---|---|---|---|---|
+| 1 write | 2,000 | 17% / 67 MB | 110% / 633 MB | 17% / 68 MB | 111% / 626 MB |
+| 1 write | 3,000 | 24% / 89 MB | 174% / 808 MB | 25% / 99 MB | 162% / 801 MB |
+| 10 writes | 1,000 | 19% / 118 MB | 156% / 859 MB | 19% / 112 MB | 153% / 868 MB |
+| 10 writes | 2,000 | 89% / 195 MB | 202% / 919 MB | 100% / 195 MB | 317% / 912 MB |
+| 10 writes | 3,000 | 147% / 295 MB | 201% / 933 MB | 146% / 276 MB | 401% / 953 MB |
+
+What this says:
+- Up to 1,000 users the store is invisible to a user on either size: at most 0.26 s on a 37 s wait. For the app as built that holds through 3,000 users on 4 vCPU and 2,000 on 2 vCPU.
+- The difference is headroom. Postgres saturates 2 vCPU at 2,000 chatty users (29 s slower, p99 134 s) and 4 vCPU at 3,000 (14 s slower); on 2 vCPU at 3,000 it is 54 s slower with a p99 of 200 s, and even the app as built loses 0.8 s. Valkey holds 37.4 s in every cell, using at most 1.5 cores and under 300 MB where Postgres uses every core it has and about 950 MB.
+- An earlier pass of the 3,000-user Postgres levels failed 90% of sessions on `too many clients already`: each worker's unused sync-off pool held one idle connection, and 30 workers overran `max_connections`. That pool is now lazy; those four levels were re-run and the tables above use the re-runs.
+
+## Results: 1 CPU / 256 MB stores (the demo's stock profile)
 
 Raw data: `results/load_w1_results.json` and `results/load_w10_results.json`; per-level log: `results/load_campaign.log`.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Concurrent-user load campaign. End-to-end latency only; LLM latency replayed
-# from runs/llm_trace.jsonl (8 real gemini-3.5-flash sessions), zero API calls.
+# from results/llm_trace.jsonl (8 real gemini-3.5-flash sessions), zero API calls.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python

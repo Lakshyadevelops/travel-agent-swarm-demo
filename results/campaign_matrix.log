@@ -1,0 +1,225 @@
+=== Stores: 2 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 1 write(s) per step · 2 vCPU · users 1,10 ===
+[07:52:33] load-dc59a9-matrix-2cpu-w1-small: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[07:52:33] valkey users=1 ...
+   p50=36.882s p95=55.466s p99=55.466s n=11 failed=0 store_cpu=1.4% (max 4.1%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.6%
+[08:01:36] postgres users=1 ...
+   p50=36.922s p95=55.534s p99=55.534s n=11 failed=0 store_cpu=1.4% (max 5.5%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.7%
+   postgres->valkey: postgres -> valkey: median delta = -39.6ms (95% CI [-52.5, -21.0], n=11). valkey is reliably faster.
+[08:10:41] postgres users=10 ...
+   p50=37.001s p95=52.249s p99=56.04s n=121 failed=0 store_cpu=2.1% (max 9.8%) client_cores=0.02/4 loop_lag_p99=1.3ms machine_cpu=1.8%
+[08:20:08] valkey users=10 ...
+   p50=36.973s p95=52.187s p99=55.988s n=121 failed=0 store_cpu=1.5% (max 4.6%) client_cores=0.02/4 loop_lag_p99=1.3ms machine_cpu=1.7%
+   postgres->valkey: postgres -> valkey: median delta = -28.5ms (95% CI [-57.1, +28.9], n=121). CI spans zero, so no detectable user-facing difference at this workload.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-dc59a9-matrix-2cpu-w1-small/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-dc59a9-matrix-2cpu-w1-small/summary.md
+=== 1 write(s) per step · 2 vCPU · users 100,300,1000,3000 ===
+[08:29:34] load-ae0475-matrix-2cpu-w1: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[08:29:34] valkey users=100 ...
+   p50=37.485s p95=51.94s p99=62.86s n=466 failed=0 store_cpu=2.7% (max 5.4%) client_cores=0.13/4 loop_lag_p99=2.1ms machine_cpu=2.1%
+[08:35:24] postgres users=100 ...
+   p50=37.514s p95=51.996s p99=62.908s n=466 failed=0 store_cpu=6.4% (max 13.9%) client_cores=0.14/4 loop_lag_p99=2.0ms machine_cpu=2.1%
+   postgres->valkey: postgres -> valkey: median delta = -23.4ms (95% CI [-43.4, -18.1], n=466). valkey is reliably faster.
+[08:41:14] postgres users=300 ...
+   p50=37.37s p95=53.466s p99=63.098s n=1384 failed=0 store_cpu=16.4% (max 21.9%) client_cores=0.43/4 loop_lag_p99=3.0ms machine_cpu=3.1%
+[08:47:04] valkey users=300 ...
+   p50=37.351s p95=53.426s p99=63.032s n=1385 failed=0 store_cpu=4.6% (max 10.7%) client_cores=0.41/4 loop_lag_p99=2.6ms machine_cpu=2.7%
+   postgres->valkey: postgres -> valkey: median delta = -21.4ms (95% CI [-51.1, +8.6], n=1383). CI spans zero, so no detectable user-facing difference at this workload.
+[08:52:55] valkey users=1000 ...
+   p50=37.234s p95=53.978s p99=62.114s n=4612 failed=0 store_cpu=10.1% (max 24.6%) client_cores=1.38/10 loop_lag_p99=3.8ms machine_cpu=4.9%
+[08:58:45] postgres users=1000 ...
+   p50=37.282s p95=54.036s p99=62.179s n=4609 failed=0 store_cpu=54.0% (max 68.5%) client_cores=1.57/10 loop_lag_p99=4.4ms machine_cpu=6.7%
+   postgres->valkey: postgres -> valkey: median delta = -42.4ms (95% CI [-53.8, -22.8], n=4607). valkey is reliably faster.
+[09:04:40] postgres users=3000 ...
+   p50=58.488s p95=86.498s p99=108.2s n=3039 failed=27556 store_cpu=202.5% (max 210.5%) client_cores=3.55/30 loop_lag_p99=4.5ms machine_cpu=14.1%
+[09:10:36] valkey users=3000 ...
+   p50=37.362s p95=53.606s p99=62.064s n=13736 failed=0 store_cpu=24.1% (max 44.9%) client_cores=4.39/30 loop_lag_p99=4.6ms machine_cpu=11.8%
+   postgres->valkey: postgres -> valkey: median delta = -21124.5ms (95% CI [-21304.4, -20887.6], n=2254). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-ae0475-matrix-2cpu-w1/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-ae0475-matrix-2cpu-w1/summary.md
+=== Stores: 4 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 1 write(s) per step · 4 vCPU · users 1,10 ===
+[09:16:35] load-83aa23-matrix-4cpu-w1-small: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[09:16:35] valkey users=1 ...
+   p50=36.887s p95=55.451s p99=55.451s n=11 failed=0 store_cpu=1.4% (max 4.5%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.6%
+[09:25:38] postgres users=1 ...
+   p50=36.922s p95=55.525s p99=55.525s n=11 failed=0 store_cpu=1.4% (max 5.4%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.7%
+   postgres->valkey: postgres -> valkey: median delta = -35.2ms (95% CI [-100.3, -24.1], n=11). valkey is reliably faster.
+[09:34:43] postgres users=10 ...
+   p50=37.001s p95=52.244s p99=56.028s n=121 failed=0 store_cpu=2.3% (max 18.6%) client_cores=0.02/4 loop_lag_p99=1.4ms machine_cpu=1.7%
+[09:44:10] valkey users=10 ...
+   p50=36.975s p95=52.193s p99=55.985s n=121 failed=0 store_cpu=1.5% (max 4.6%) client_cores=0.02/4 loop_lag_p99=1.3ms machine_cpu=1.6%
+   postgres->valkey: postgres -> valkey: median delta = -26.2ms (95% CI [-62.6, +35.3], n=121). CI spans zero, so no detectable user-facing difference at this workload.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-83aa23-matrix-4cpu-w1-small/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-83aa23-matrix-4cpu-w1-small/summary.md
+=== 1 write(s) per step · 4 vCPU · users 100,300,1000,3000 ===
+[09:53:37] load-8bbcb7-matrix-4cpu-w1: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[09:53:37] valkey users=100 ...
+   p50=37.479s p95=51.944s p99=62.848s n=466 failed=0 store_cpu=2.6% (max 5.3%) client_cores=0.13/4 loop_lag_p99=2.1ms machine_cpu=2.0%
+[09:59:26] postgres users=100 ...
+   p50=37.522s p95=51.983s p99=62.936s n=466 failed=0 store_cpu=7.9% (max 49.7%) client_cores=0.15/4 loop_lag_p99=2.1ms machine_cpu=2.2%
+   postgres->valkey: postgres -> valkey: median delta = -39.5ms (95% CI [-86.8, -26.7], n=466). valkey is reliably faster.
+[10:05:17] postgres users=300 ...
+   p50=37.359s p95=53.448s p99=63.108s n=1384 failed=0 store_cpu=16.9% (max 33.4%) client_cores=0.43/4 loop_lag_p99=3.0ms machine_cpu=3.0%
+[10:11:07] valkey users=300 ...
+   p50=37.34s p95=53.428s p99=63.045s n=1386 failed=0 store_cpu=4.5% (max 8.4%) client_cores=0.41/4 loop_lag_p99=2.8ms machine_cpu=2.5%
+   postgres->valkey: postgres -> valkey: median delta = -28.2ms (95% CI [-53.1, -8.5], n=1383). valkey is reliably faster.
+[10:16:58] valkey users=1000 ...
+   p50=37.233s p95=53.977s p99=62.082s n=4611 failed=0 store_cpu=10.2% (max 25.5%) client_cores=1.38/10 loop_lag_p99=4.3ms machine_cpu=4.9%
+[10:22:48] postgres users=1000 ...
+   p50=37.282s p95=54.039s p99=62.161s n=4609 failed=0 store_cpu=54.8% (max 85.0%) client_cores=1.54/10 loop_lag_p99=4.2ms machine_cpu=6.3%
+   postgres->valkey: postgres -> valkey: median delta = -43.2ms (95% CI [-58.8, -25.9], n=4606). valkey is reliably faster.
+[10:28:43] postgres users=3000 ...
+   p50=38.17s p95=54.316s p99=63.477s n=5927 failed=63508 store_cpu=406.0% (max 415.4%) client_cores=6.56/30 loop_lag_p99=7.3ms machine_cpu=28.0%
+[10:34:41] valkey users=3000 ...
+   p50=37.361s p95=53.636s p99=62.042s n=13735 failed=0 store_cpu=25.1% (max 66.4%) client_cores=4.39/30 loop_lag_p99=4.7ms machine_cpu=11.8%
+   postgres->valkey: postgres -> valkey: median delta = -765.2ms (95% CI [-828.7, -729.6], n=5762). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-8bbcb7-matrix-4cpu-w1/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-8bbcb7-matrix-4cpu-w1/summary.md
+=== Stores: 2 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 10 write(s) per step · 2 vCPU · users 1,10 ===
+[10:40:44] load-ef362b-matrix-2cpu-w10-small: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[10:40:44] valkey users=1 ...
+   p50=36.911s p95=55.504s p99=55.504s n=11 failed=0 store_cpu=1.4% (max 4.5%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.6%
+[10:49:47] postgres users=1 ...
+   p50=36.986s p95=55.713s p99=55.713s n=11 failed=0 store_cpu=1.5% (max 6.0%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.6%
+   postgres->valkey: postgres -> valkey: median delta = -75.3ms (95% CI [-147.7, -65.3], n=11). valkey is reliably faster.
+[10:58:54] postgres users=10 ...
+   p50=37.067s p95=52.364s p99=56.157s n=121 failed=0 store_cpu=3.2% (max 21.3%) client_cores=0.03/4 loop_lag_p99=1.4ms machine_cpu=1.7%
+[11:08:22] valkey users=10 ...
+   p50=36.988s p95=52.221s p99=56.012s n=121 failed=0 store_cpu=1.6% (max 4.5%) client_cores=0.03/4 loop_lag_p99=1.4ms machine_cpu=1.7%
+   postgres->valkey: postgres -> valkey: median delta = -78.5ms (95% CI [-99.3, -20.2], n=121). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-ef362b-matrix-2cpu-w10-small/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-ef362b-matrix-2cpu-w10-small/summary.md
+=== 10 write(s) per step · 2 vCPU · users 100,300,1000,3000 ===
+[11:17:49] load-fa5d3f-matrix-2cpu-w10: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[11:17:49] valkey users=100 ...
+   p50=37.512s p95=51.964s p99=62.922s n=466 failed=0 store_cpu=3.1% (max 10.3%) client_cores=0.17/4 loop_lag_p99=2.1ms machine_cpu=2.1%
+[11:23:38] postgres users=100 ...
+   p50=37.582s p95=52.119s p99=63.104s n=465 failed=0 store_cpu=15.1% (max 53.4%) client_cores=0.19/4 loop_lag_p99=2.1ms machine_cpu=2.4%
+   postgres->valkey: postgres -> valkey: median delta = -70.6ms (95% CI [-118.3, -38.1], n=465). valkey is reliably faster.
+[11:29:30] postgres users=300 ...
+   p50=37.464s p95=53.593s p99=63.319s n=1382 failed=0 store_cpu=43.5% (max 89.2%) client_cores=0.6/4 loop_lag_p99=3.2ms machine_cpu=4.0%
+[11:35:22] valkey users=300 ...
+   p50=37.363s p95=53.466s p99=63.103s n=1384 failed=0 store_cpu=6.7% (max 20.9%) client_cores=0.53/4 loop_lag_p99=3.0ms machine_cpu=2.9%
+   postgres->valkey: postgres -> valkey: median delta = -100.4ms (95% CI [-134.8, -76.2], n=1382). valkey is reliably faster.
+[11:41:13] valkey users=1000 ...
+   p50=37.267s p95=54.031s p99=62.172s n=4609 failed=0 store_cpu=19.1% (max 57.4%) client_cores=1.87/10 loop_lag_p99=5.6ms machine_cpu=6.2%
+[11:47:03] postgres users=1000 ...
+   p50=37.52s p95=54.358s p99=62.497s n=4571 failed=0 store_cpu=155.8% (max 207.2%) client_cores=2.27/10 loop_lag_p99=7.1ms machine_cpu=10.8%
+   postgres->valkey: postgres -> valkey: median delta = -258.3ms (95% CI [-290.1, -206.2], n=4566). valkey is reliably faster.
+[11:52:58] postgres users=3000 ...
+   p50=119.77s p95=157.728s p99=191.28s n=1171 failed=26840 store_cpu=200.2% (max 206.7%) client_cores=2.61/30 loop_lag_p99=2.7ms machine_cpu=12.8%
+[11:58:58] valkey users=3000 ...
+   p50=37.417s p95=53.708s p99=62.221s n=13707 failed=0 store_cpu=145.2% (max 199.7%) client_cores=6.62/30 loop_lag_p99=7.9ms machine_cpu=19.7%
+   postgres->valkey: postgres -> valkey: median delta = -14585.7ms (95% CI [-17833.3, -11072.6], n=14). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-fa5d3f-matrix-2cpu-w10/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-fa5d3f-matrix-2cpu-w10/summary.md
+=== Stores: 4 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-postgres-1 Healthy 
+ Container travel-agent-swarm-valkey-1 Healthy 
+=== 10 write(s) per step · 4 vCPU · users 1,10 ===
+[12:04:56] load-8c0b2d-matrix-4cpu-w10-small: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[12:04:56] valkey users=1 ...
+   p50=36.905s p95=55.494s p99=55.494s n=11 failed=0 store_cpu=1.5% (max 4.7%) client_cores=0.0/1 loop_lag_p99=1.1ms machine_cpu=1.6%
+[12:13:59] postgres users=1 ...
+   p50=36.983s p95=55.695s p99=55.695s n=11 failed=0 store_cpu=1.8% (max 5.6%) client_cores=0.0/1 loop_lag_p99=1.0ms machine_cpu=1.6%
+   postgres->valkey: postgres -> valkey: median delta = -77.6ms (95% CI [-240.9, -57.9], n=11). valkey is reliably faster.
+[12:23:06] postgres users=10 ...
+   p50=37.058s p95=52.347s p99=56.156s n=121 failed=0 store_cpu=3.4% (max 45.0%) client_cores=0.03/4 loop_lag_p99=1.3ms machine_cpu=1.6%
+[12:32:35] valkey users=10 ...
+   p50=36.982s p95=52.227s p99=56.026s n=121 failed=0 store_cpu=1.8% (max 4.4%) client_cores=0.03/4 loop_lag_p99=1.4ms machine_cpu=1.6%
+   postgres->valkey: postgres -> valkey: median delta = -76.0ms (95% CI [-102.3, +5.7], n=121). CI spans zero, so no detectable user-facing difference at this workload.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-8c0b2d-matrix-4cpu-w10-small/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-8c0b2d-matrix-4cpu-w10-small/summary.md
+=== 10 write(s) per step · 4 vCPU · users 100,300,1000,3000 ===
+[12:42:02] load-e821cd-matrix-4cpu-w10: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[12:42:02] valkey users=100 ...
+   p50=37.501s p95=51.973s p99=63.021s n=466 failed=0 store_cpu=3.4% (max 7.3%) client_cores=0.17/4 loop_lag_p99=2.1ms machine_cpu=1.9%
+[12:47:51] postgres users=100 ...
+   p50=37.579s p95=52.099s p99=63.095s n=465 failed=0 store_cpu=16.1% (max 54.8%) client_cores=0.19/4 loop_lag_p99=2.1ms machine_cpu=2.4%
+   postgres->valkey: postgres -> valkey: median delta = -77.3ms (95% CI [-116.4, -37.6], n=465). valkey is reliably faster.
+[12:53:43] postgres users=300 ...
+   p50=37.467s p95=53.61s p99=63.315s n=1382 failed=0 store_cpu=44.0% (max 84.6%) client_cores=0.59/4 loop_lag_p99=3.5ms machine_cpu=3.9%
+[12:59:35] valkey users=300 ...
+   p50=37.362s p95=53.453s p99=63.09s n=1385 failed=0 store_cpu=7.2% (max 11.1%) client_cores=0.5/4 loop_lag_p99=2.4ms machine_cpu=2.9%
+   postgres->valkey: postgres -> valkey: median delta = -105.5ms (95% CI [-139.2, -72.5], n=1382). valkey is reliably faster.
+[13:05:26] valkey users=1000 ...
+   p50=37.259s p95=54.028s p99=62.192s n=4608 failed=0 store_cpu=18.8% (max 25.2%) client_cores=1.86/10 loop_lag_p99=5.0ms machine_cpu=6.3%
+[13:11:16] postgres users=1000 ...
+   p50=37.393s p95=54.195s p99=62.5s n=4588 failed=0 store_cpu=153.0% (max 219.2%) client_cores=2.27/10 loop_lag_p99=6.5ms machine_cpu=10.3%
+   postgres->valkey: postgres -> valkey: median delta = -135.7ms (95% CI [-154.1, -111.7], n=4583). valkey is reliably faster.
+[13:17:13] postgres users=3000 ...
+   p50=61.917s p95=94.907s p99=122.302s n=2754 failed=56429 store_cpu=405.2% (max 414.2%) client_cores=5.26/30 loop_lag_p99=5.2ms machine_cpu=24.6%
+[13:23:10] valkey users=3000 ...
+   p50=37.408s p95=53.723s p99=62.206s n=13713 failed=0 store_cpu=147.9% (max 239.6%) client_cores=6.53/30 loop_lag_p99=9.1ms machine_cpu=19.9%
+   postgres->valkey: postgres -> valkey: median delta = -24591.5ms (95% CI [-24798.1, -24311.3], n=1898). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-e821cd-matrix-4cpu-w10/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-e821cd-matrix-4cpu-w10/summary.md
+=== Stores: back to the demo profile ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 

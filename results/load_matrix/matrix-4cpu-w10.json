@@ -1,0 +1,515 @@
+{
+ "manifest": {
+  "arms": "valkey,postgres",
+  "users": "100,300,1000,3000",
+  "procs": "auto",
+  "warmup": 105.0,
+  "measure": 180.0,
+  "ramp": 60.0,
+  "writes": 10,
+  "provider_ms": 40,
+  "llm_scale": 1.0,
+  "pg_cpus": null,
+  "valkey_cpus": null,
+  "tag": "matrix-4cpu-w10",
+  "run_id": "load-e821cd-matrix-4cpu-w10",
+  "environment": {
+   "host_cores": 64,
+   "git_commit": "d7d714d+dirty",
+   "stores": {
+    "valkey": {
+     "cpus": "4",
+     "memory": "2 GB",
+     "settings": {
+      "appendonly": "no",
+      "io-threads": "4",
+      "maxmemory": "1610612736",
+      "maxmemory-policy": "allkeys-lru",
+      "save": "3600 1 300 100 60 10000"
+     }
+    },
+    "postgres": {
+     "cpus": "4",
+     "memory": "2 GB",
+     "settings": {
+      "max_connections": "100",
+      "shared_buffers": "512MB",
+      "effective_cache_size": "1536MB",
+      "work_mem": "2621kB",
+      "synchronous_commit": "on",
+      "max_worker_processes": "4",
+      "max_wal_size": "4GB"
+     }
+    }
+   }
+  },
+  "note": "3,000-user level removed: it hit max_connections before the lazy sync-off pool fix and was re-run."
+ },
+ "levels": [
+  {
+   "users": 100,
+   "arms": {
+    "valkey": {
+     "arm": "valkey",
+     "users": 100,
+     "procs": 4,
+     "pg_pool_per_proc": 22,
+     "n": 466,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.501,
+     "p95_s": 51.973,
+     "p99_s": 63.021,
+     "max_s": 64.178,
+     "sessions_per_min": 155.3,
+     "store_cpu_pct_avg": 3.4,
+     "store_cpu_pct_max": 7.3,
+     "store_mem_mb_max": 30.9,
+     "client_cores_used": 0.17,
+     "client_cores_available": 4,
+     "loop_lag": {
+      "p50_ms": 0.4,
+      "p99_ms": 2.1,
+      "max_ms": 84.0
+     },
+     "machine_cpu_pct_avg": 1.9,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    },
+    "postgres": {
+     "arm": "postgres",
+     "users": 100,
+     "procs": 4,
+     "pg_pool_per_proc": 22,
+     "n": 465,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.579,
+     "p95_s": 52.099,
+     "p99_s": 63.095,
+     "max_s": 64.473,
+     "sessions_per_min": 155.0,
+     "store_cpu_pct_avg": 16.1,
+     "store_cpu_pct_max": 54.8,
+     "store_mem_mb_max": 257.2,
+     "client_cores_used": 0.19,
+     "client_cores_available": 4,
+     "loop_lag": {
+      "p50_ms": 0.4,
+      "p99_ms": 2.1,
+      "max_ms": 120.6
+     },
+     "machine_cpu_pct_avg": 2.4,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    }
+   },
+   "deltas": {
+    "postgres->valkey": {
+     "n_pairs": 465,
+     "median_delta_ms": -77.273,
+     "ci95_ms": [
+      -116.391,
+      -37.56
+     ],
+     "significant": true,
+     "verdict": "postgres -> valkey: median delta = -77.3ms (95% CI [-116.4, -37.6], n=465). valkey is reliably faster."
+    }
+   }
+  },
+  {
+   "users": 300,
+   "arms": {
+    "postgres": {
+     "arm": "postgres",
+     "users": 300,
+     "procs": 4,
+     "pg_pool_per_proc": 22,
+     "n": 1382,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.467,
+     "p95_s": 53.61,
+     "p99_s": 63.315,
+     "max_s": 71.553,
+     "sessions_per_min": 460.7,
+     "store_cpu_pct_avg": 44.0,
+     "store_cpu_pct_max": 84.6,
+     "store_mem_mb_max": 417.4,
+     "client_cores_used": 0.59,
+     "client_cores_available": 4,
+     "loop_lag": {
+      "p50_ms": 0.6,
+      "p99_ms": 3.5,
+      "max_ms": 177.1
+     },
+     "machine_cpu_pct_avg": 3.9,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    },
+    "valkey": {
+     "arm": "valkey",
+     "users": 300,
+     "procs": 4,
+     "pg_pool_per_proc": 22,
+     "n": 1385,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.362,
+     "p95_s": 53.453,
+     "p99_s": 63.09,
+     "max_s": 71.266,
+     "sessions_per_min": 461.7,
+     "store_cpu_pct_avg": 7.2,
+     "store_cpu_pct_max": 11.1,
+     "store_mem_mb_max": 50.0,
+     "client_cores_used": 0.5,
+     "client_cores_available": 4,
+     "loop_lag": {
+      "p50_ms": 0.7,
+      "p99_ms": 2.4,
+      "max_ms": 187.1
+     },
+     "machine_cpu_pct_avg": 2.9,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    }
+   },
+   "deltas": {
+    "postgres->valkey": {
+     "n_pairs": 1382,
+     "median_delta_ms": -105.453,
+     "ci95_ms": [
+      -139.2,
+      -72.498
+     ],
+     "significant": true,
+     "verdict": "postgres -> valkey: median delta = -105.5ms (95% CI [-139.2, -72.5], n=1382). valkey is reliably faster."
+    }
+   }
+  },
+  {
+   "users": 1000,
+   "arms": {
+    "valkey": {
+     "arm": "valkey",
+     "users": 1000,
+     "procs": 10,
+     "pg_pool_per_proc": 9,
+     "n": 4608,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.259,
+     "p95_s": 54.028,
+     "p99_s": 62.192,
+     "max_s": 71.299,
+     "sessions_per_min": 1536.0,
+     "store_cpu_pct_avg": 18.8,
+     "store_cpu_pct_max": 25.2,
+     "store_mem_mb_max": 111.6,
+     "client_cores_used": 1.86,
+     "client_cores_available": 10,
+     "loop_lag": {
+      "p50_ms": 0.7,
+      "p99_ms": 5.0,
+      "max_ms": 247.7
+     },
+     "machine_cpu_pct_avg": 6.3,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    },
+    "postgres": {
+     "arm": "postgres",
+     "users": 1000,
+     "procs": 10,
+     "pg_pool_per_proc": 9,
+     "n": 4588,
+     "failed": 0,
+     "errors_sample": [],
+     "p50_s": 37.393,
+     "p95_s": 54.195,
+     "p99_s": 62.5,
+     "max_s": 71.574,
+     "sessions_per_min": 1529.3,
+     "store_cpu_pct_avg": 153.0,
+     "store_cpu_pct_max": 219.2,
+     "store_mem_mb_max": 867.6,
+     "client_cores_used": 2.27,
+     "client_cores_available": 10,
+     "loop_lag": {
+      "p50_ms": 0.6,
+      "p99_ms": 6.5,
+      "max_ms": 258.6
+     },
+     "machine_cpu_pct_avg": 10.3,
+     "client_bound": [],
+     "evicted_keys": 0,
+     "latency_model": {
+      "source": "trace:results/llm_trace.jsonl",
+      "scale": 1.0,
+      "invocations": 56,
+      "per_role": {
+       "supervisor_intake": {
+        "n": 8,
+        "p50_ms": 6016.1,
+        "max_ms": 9126.6
+       },
+       "destination_scout": {
+        "n": 8,
+        "p50_ms": 4734.2,
+        "max_ms": 6076.7
+       },
+       "stay_agent": {
+        "n": 8,
+        "p50_ms": 7292.0,
+        "max_ms": 10522.6
+       },
+       "transit_agent": {
+        "n": 8,
+        "p50_ms": 5215.8,
+        "max_ms": 6162.0
+       },
+       "budget_guardrail": {
+        "n": 8,
+        "p50_ms": 3675.1,
+        "max_ms": 4528.6
+       },
+       "itinerary_assembly": {
+        "n": 8,
+        "p50_ms": 12846.4,
+        "max_ms": 18697.8
+       },
+       "supervisor_final": {
+        "n": 8,
+        "p50_ms": 5372.0,
+        "max_ms": 6754.4
+       }
+      }
+     }
+    }
+   },
+   "deltas": {
+    "postgres->valkey": {
+     "n_pairs": 4583,
+     "median_delta_ms": -135.659,
+     "ci95_ms": [
+      -154.05,
+      -111.667
+     ],
+     "significant": true,
+     "verdict": "postgres -> valkey: median delta = -135.7ms (95% CI [-154.1, -111.7], n=4583). valkey is reliably faster."
+    }
+   }
+  }
+ ]
+}

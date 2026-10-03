@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.agents.callbacks import RECORD_LLM_TRACE  # noqa: E402
 from app.agents.orchestrator import run_swarm  # noqa: E402
 from app.llm.latency import TRACE_PATH, LatencyModel  # noqa: E402
 from app.state.registry import backends  # noqa: E402
@@ -25,6 +26,7 @@ CITIES = ["Lisbon", "Tokyo", "Paris", "Mexico City", "Reykjavik", "New York"]
 
 
 async def main(runs: int) -> None:
+    RECORD_LLM_TRACE.set(True)  # the only place that records; demo runs never do
     await backends.startup()
     try:
         for i in range(runs):

@@ -24,6 +24,11 @@ HOW IT STAYS FAIR
     users are split across worker processes, and the client's own CPU usage is
     recorded next to the store's so a saturated client can't masquerade as a
     slow database.
+  * Each worker also measures its own event-loop lag during the measured
+    window: a late loop delays every await of every session on any store, so a
+    high lag marks the level as limited by the load generator.
+  * Workers start together: each signals ready after importing ADK and opening
+    its pools, and the parent releases them with one shared start time.
   * Sessions are deleted after they complete (outside the timed window), as a
     real app would expire them, so neither store is measured with an
     ever-growing dataset or pushed into eviction.
@@ -68,6 +73,38 @@ def brief_for(uid: int, i: int) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 # Worker process
 # --------------------------------------------------------------------------
+async def _await_start(args: argparse.Namespace) -> float:
+    """Signal ready, then wait for the parent's start time (t0).
+
+    The parent writes t0 only once every worker has imported ADK and opened its
+    pools, so no worker's users start late when there are many workers.
+    """
+    if not args.start_file:
+        return args.t0
+    Path(args.out + ".ready").write_text("ready")
+    start = Path(args.start_file)
+    deadline = time.time() + args.ready_timeout
+    while not start.exists():
+        if time.time() > deadline:
+            raise RuntimeError("no start signal from the parent")
+        await asyncio.sleep(0.1)
+    return float(json.loads(start.read_text())["t0"])
+
+
+async def _lag_monitor(measure_from: float, stop_at: float, lags: list[float]) -> None:
+    """How late this event loop wakes a 100 ms timer: the client's own queueing.
+
+    Every await in every session waits behind the same backlog, so a late loop
+    inflates end-to-end latency on any store. Sampled in the measured window.
+    """
+    tick = 0.1
+    await asyncio.sleep(max(0.0, measure_from - time.time()))
+    while time.time() < stop_at:
+        before = time.perf_counter()
+        await asyncio.sleep(tick)
+        lags.append(round((time.perf_counter() - before - tick) * 1000.0, 2))
+
+
 async def _worker(args: argparse.Namespace) -> dict[str, Any]:
     from app.agents.orchestrator import run_swarm
     from app.config import settings
@@ -77,10 +114,11 @@ async def _worker(args: argparse.Namespace) -> dict[str, Any]:
     await backends.startup()
     model = LatencyModel.default(scale=args.llm_scale)
 
-    t0 = args.t0
+    t0 = await _await_start(args)
     measure_from = t0 + args.warmup
     stop_at = measure_from + args.measure
     sessions: list[dict[str, Any]] = []
+    lags: list[float] = []
 
     async def user(uid: int) -> None:
         rng = random.Random(f"ramp:{uid}")
@@ -121,7 +159,9 @@ async def _worker(args: argparse.Namespace) -> dict[str, Any]:
 
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
     wall0 = time.time()
+    monitor = asyncio.create_task(_lag_monitor(measure_from, stop_at, lags))
     await asyncio.gather(*(user(u) for u in range(args.uid_start, args.uid_end)))
+    await monitor
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     wall = time.time() - wall0
     evicted = await backends.evicted_keys(args.arm)
@@ -129,7 +169,8 @@ async def _worker(args: argparse.Namespace) -> dict[str, Any]:
 
     cpu_s = (ru1.ru_utime - ru0.ru_utime) + (ru1.ru_stime - ru0.ru_stime)
     return {"sessions": sessions, "cpu_s": cpu_s, "wall_s": wall,
-            "evicted_keys": evicted, "latency_model": model.describe()}
+            "evicted_keys": evicted, "latency_model": model.describe(),
+            "loop_lag_ms": lags}
 
 
 def worker_main(argv: list[str]) -> None:
@@ -137,7 +178,11 @@ def worker_main(argv: list[str]) -> None:
     ap.add_argument("--arm", required=True)
     ap.add_argument("--uid-start", type=int, required=True)
     ap.add_argument("--uid-end", type=int, required=True)
-    ap.add_argument("--t0", type=float, required=True)
+    ap.add_argument("--t0", type=float, default=0.0,
+                    help="fixed start time; ignored when --start-file is given")
+    ap.add_argument("--start-file", default="",
+                    help="barrier: write <out>.ready, then wait for this file's t0")
+    ap.add_argument("--ready-timeout", type=float, default=300.0)
     ap.add_argument("--warmup", type=float, required=True)
     ap.add_argument("--measure", type=float, required=True)
     ap.add_argument("--ramp", type=float, required=True)

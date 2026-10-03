@@ -115,9 +115,11 @@ class BackendManager:
             max_size=settings.postgres_pool_max,
             command_timeout=10,
         )
+        # min_size=0: this arm is rarely used, and an idle connection per
+        # process adds up (30 load-test workers × 1 broke max_connections).
         self._pg_pool_sync_off = await asyncpg.create_pool(
             settings.postgres_dsn,
-            min_size=1,
+            min_size=0,
             max_size=settings.postgres_pool_max,
             command_timeout=10,
             server_settings={"synchronous_commit": "off"},

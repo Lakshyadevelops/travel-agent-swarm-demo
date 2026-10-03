@@ -1,0 +1,105 @@
+=== Stores: 2 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 1 write(s) per step · 2 vCPU · users 3000 ===
+[15:34:38] load-e3c58e-matrix-2cpu-w1: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[15:34:38] valkey users=3000 ...
+   p50=37.362s p95=53.62s p99=62.05s n=13738 failed=0 store_cpu=24.1% (max 30.2%) client_cores=4.36/30 loop_lag_p99=4.5ms machine_cpu=11.8%
+[15:40:29] postgres users=3000 ...
+   p50=38.17s p95=54.898s p99=63.719s n=13374 failed=0 store_cpu=173.5% (max 211.9%) client_cores=4.92/30 loop_lag_p99=5.4ms machine_cpu=16.7%
+   postgres->valkey: postgres -> valkey: median delta = -808.3ms (95% CI [-855.9, -761.8], n=13337). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-e3c58e-matrix-2cpu-w1/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-e3c58e-matrix-2cpu-w1/summary.md
+=== Stores: 4 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 1 write(s) per step · 4 vCPU · users 3000 ===
+[15:46:48] load-5fca95-matrix-4cpu-w1: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[15:46:48] valkey users=3000 ...
+   p50=37.359s p95=53.641s p99=62.055s n=13737 failed=0 store_cpu=24.7% (max 58.6%) client_cores=4.4/30 loop_lag_p99=4.8ms machine_cpu=11.8%
+[15:52:39] postgres users=3000 ...
+   p50=37.407s p95=53.692s p99=62.144s n=13717 failed=0 store_cpu=162.2% (max 195.9%) client_cores=4.87/30 loop_lag_p99=5.0ms machine_cpu=16.2%
+   postgres->valkey: postgres -> valkey: median delta = -49.8ms (95% CI [-55.1, -32.6], n=13708). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-5fca95-matrix-4cpu-w1/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-5fca95-matrix-4cpu-w1/summary.md
+=== Stores: 2 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 10 write(s) per step · 2 vCPU · users 3000 ===
+[15:58:55] load-959cec-matrix-2cpu-w10: host 64 cores; valkey 2 CPU / 2 GB; postgres 2 CPU / 2 GB
+[15:58:55] valkey users=3000 ...
+   p50=37.419s p95=53.772s p99=62.198s n=13709 failed=0 store_cpu=147.4% (max 198.9%) client_cores=6.71/30 loop_lag_p99=8.8ms machine_cpu=20.0%
+[16:04:46] postgres users=3000 ...
+   p50=99.894s p95=160.203s p99=200.187s n=4782 failed=0 store_cpu=201.2% (max 209.4%) client_cores=3.24/30 loop_lag_p99=3.7ms machine_cpu=13.2%
+   postgres->valkey: postgres -> valkey: median delta = -54033.8ms (95% CI [-54675.8, -53540.2], n=1575). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-959cec-matrix-2cpu-w10/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-959cec-matrix-2cpu-w10/summary.md
+=== Stores: 4 vCPU / 2G each ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 
+=== 10 write(s) per step · 4 vCPU · users 3000 ===
+[16:11:31] load-19fb4b-matrix-4cpu-w10: host 64 cores; valkey 4 CPU / 2 GB; postgres 4 CPU / 2 GB
+[16:11:31] valkey users=3000 ...
+   p50=37.413s p95=53.722s p99=62.184s n=13707 failed=0 store_cpu=145.7% (max 239.1%) client_cores=6.59/30 loop_lag_p99=7.8ms machine_cpu=19.5%
+[16:17:22] postgres users=3000 ...
+   p50=51.694s p95=77.597s p99=96.207s n=9526 failed=0 store_cpu=400.7% (max 418.3%) client_cores=6.24/30 loop_lag_p99=7.0ms machine_cpu=24.2%
+   postgres->valkey: postgres -> valkey: median delta = -14305.7ms (95% CI [-14389.7, -14225.4], n=8226). valkey is reliably faster.
+
+results: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-19fb4b-matrix-4cpu-w10/results.json
+summary: /usr/local/google/home/lakshyagg/travel-agent-swarm/runs/load-19fb4b-matrix-4cpu-w10/summary.md
+=== Stores: back to the demo profile ===
+ Container travel-agent-swarm-postgres-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreate 
+ Container travel-agent-swarm-valkey-1 Recreated 
+ Container travel-agent-swarm-postgres-1 Recreated 
+ Container travel-agent-swarm-valkey-1 Starting 
+ Container travel-agent-swarm-postgres-1 Starting 
+ Container travel-agent-swarm-postgres-1 Started 
+ Container travel-agent-swarm-valkey-1 Started 
+ Container travel-agent-swarm-postgres-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Waiting 
+ Container travel-agent-swarm-valkey-1 Healthy 
+ Container travel-agent-swarm-postgres-1 Healthy 

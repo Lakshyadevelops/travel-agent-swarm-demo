@@ -90,7 +90,11 @@ class LatencyModel:
             pairs.setdefault("*", []).append(pair)
         if not pairs:
             raise ValueError(f"no usable rows in {path}")
-        return cls(pairs=pairs, source=f"trace:{path.name}", scale=scale)
+        try:
+            where = path.resolve().relative_to(REPO_ROOT)
+        except ValueError:
+            where = path
+        return cls(pairs=pairs, source=f"trace:{where}", scale=scale)
 
     @classmethod
     def from_percentiles(cls, p50_ms: float, p95_ms: float, scale: float = 1.0) -> "LatencyModel":

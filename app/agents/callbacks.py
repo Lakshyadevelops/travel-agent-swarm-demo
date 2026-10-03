@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextvars import ContextVar
 from typing import Any, Optional
 
 from google.adk.agents.callback_context import CallbackContext
@@ -80,11 +81,19 @@ def make_after_callback(agent_name: str, label: str):
 
 
 # ---- LLM latency trace (real-model runs only) ----------------------------
+# Only calibration (scripts/calibrate_llm.py) records. Demo runs research with
+# Google Search, retry busy answers and plan any destination, so their model
+# times say nothing about the catalog workload the load tests replay; letting
+# them append would make benchmark results drift with demo use.
+RECORD_LLM_TRACE: ContextVar[bool] = ContextVar("record_llm_trace", default=False)
+
+
 def make_model_callbacks(agent_name: str, model_name: str):
     """Time every real model call, split by whether it produced a tool call.
 
-    One row per agent invocation lands in runs/llm_trace.jsonl; the load
-    generator replays these instead of calling the API (see llm/latency.py).
+    When RECORD_LLM_TRACE is on, one row per agent invocation lands in
+    runs/llm_trace.jsonl; the load generator replays these instead of calling
+    the API (see llm/latency.py).
     """
 
     def before_model(callback_context: CallbackContext, llm_request: LlmRequest):
@@ -112,7 +121,7 @@ def make_model_callbacks(agent_name: str, model_name: str):
 
 def _flush_llm_trace(agent_name: str) -> None:
     acc = _LLM.pop(_key(agent_name), None)
-    if not acc or not acc.get("calls"):
+    if not acc or not acc.get("calls") or not RECORD_LLM_TRACE.get():
         return
     from app.llm.latency import TRACE_PATH  # local: avoid import cycle at startup
 
