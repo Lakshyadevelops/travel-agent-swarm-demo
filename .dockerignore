@@ -1,0 +1,12 @@
+# Everything the image does not need. The Dockerfile COPYs only app/ and the
+# committed latency trace, but a small context keeps `gcloud builds submit`
+# uploads quick and keeps secrets (.env) out of the build entirely.
+*
+!app/
+!results/llm_trace.jsonl
+!requirements-runtime.txt
+
+# Never inside app/ either.
+**/__pycache__/
+**/*.pyc
+**/.DS_Store

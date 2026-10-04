@@ -4,3 +4,14 @@ __pycache__/
 .env
 runs/
 .pytest_cache/
+
+# Local tool downloads (terraform binary, provider docs); not part of the repo.
+.tools/
+
+# Terraform working state. Remote state lives in GCS (see deploy/hosting/backend.tf);
+# .terraform.lock.hcl is committed on purpose (pinned provider hashes).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars.local
+crash.log
