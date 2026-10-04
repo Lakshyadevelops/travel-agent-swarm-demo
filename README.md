@@ -52,7 +52,7 @@ docker compose up -d            # stores listen on 127.0.0.1 only
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # add GOOGLE_API_KEY: the UI always plans with live Gemini
 .venv/bin/python -m uvicorn app.main:app --port 8080
-.venv/bin/python -m pytest -q   # ~217 tests; scripted model and canned research, no API calls
+.venv/bin/python -m pytest -q   # ~236 tests; scripted model and canned research, no API calls
 ```
 
 The UI has two tabs, one per audience. One event stream per run feeds both.
@@ -165,6 +165,24 @@ Caveats:
 - Valkey was never saturated on this 8-core machine.
 - LLM latency is replayed, so Gemini's own rate limiting at scale is not modelled.
 
+## Deploy to Google Cloud
+
+The same server runs as one container on Cloud Run against managed stores, sized as the small-vs-small question the demo asks: **Memorystore for Valkey** (`SHARED_CORE_NANO`, 1 shard, cluster mode off) and **Cloud SQL for PostgreSQL 17** (`db-g1-small`). Both are Private Service Connect endpoints in a private VPC; Cloud Run reaches them through Direct VPC egress. Gemini is called through **Vertex AI** with the service account's credentials, so there is no API key anywhere in the deployment. The URL sits behind **Identity-Aware Proxy**. One Terraform module (`click-to-deploy/demo/terraform/terraform-modules/travel_swarm`) describes all of it; two roots use it:
+
+| Root | Purpose | Access |
+|---|---|---|
+| `deploy/hosting/` | The 24x7 instance in `ks-opm-project` (us-west1), plus the Artifact Registry repository the image is published to | `domain:google.com` through IAP |
+| `click-to-deploy/` | go/demos click-to-deploy into an Argolis project, laid out per the [Demo Automation Guide](https://g3doc.corp.google.com/company/teams/godemos/demoautomation.md) | the deploying user through IAP |
+
+```bash
+scripts/deploy_hosting.sh --plan   # what would change
+scripts/deploy_hosting.sh          # build the image (docker), push, terraform apply, print the URL
+```
+
+The image is tagged with the short commit hash and Terraform pins that tag. `requirements-runtime.txt` is a hashed lockfile (`scripts/lock_runtime_requirements.sh`), so the build installs with `--require-hashes`. On a corp machine pass the PyPI mirror: `docker build --build-arg PIP_INDEX_URL=... --build-arg PIP_TRUSTED_HOST=...`.
+
+What the app does differently when hosted, all driven by environment variables (see `.env.example`): `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION=global` select Vertex AI (the Gemini 3.x models are served from `global`, not from a region); the Postgres schema (`app/state/schema.sql`, idempotent) is applied at startup under an advisory lock because Cloud SQL has no init hook; `VALKEY_CACHE_URL=off` drops the cache tier the UI never offers; `PORT` and `RUNS_DIR=/tmp/runs` come from Cloud Run. Details and the submission checklist: `click-to-deploy/README.md`.
+
 ## Layout
 
 ```
@@ -172,11 +190,14 @@ app/agents/     swarm, prompts, scratchpad coordination, day planner
 app/providers/  live research (Gemini + Google Search), catalog and mock flights for
                 benchmarks, travel legs, sun times
 app/state/      Valkey / Postgres session services and scratchpads, backend registry,
-                inspector (store layout + raw snapshot for Under the Hood)
+                schema.sql, inspector (store layout + raw snapshot for Under the Hood)
 app/bench/      interleaved benchmark, sweeps, concurrent-user load test
-app/llm/        fake model with latency replay, latency model, Gemini probe
+app/llm/        fake model with latency replay, latency model, Gemini client + probe
 app/telemetry/  per-op instrumentation, JSONL op log, live state feed for the UI
 app/static/     the two-tab UI (DOM APIs only, strict CSP)
-scripts/        benchmarks, calibration, load test drivers
+scripts/        benchmarks, calibration, load test drivers, deploy_hosting.sh
 results/        committed benchmark data and latency trace
+click-to-deploy/  go/demos click-to-deploy Terraform (module + root + org policy config)
+deploy/hosting/   Terraform root for the hosted instance in ks-opm-project
+Dockerfile, cloudbuild.yaml, requirements-runtime.{in,txt}   the container image
 ```
