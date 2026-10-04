@@ -194,7 +194,7 @@ const FALLBACK_CONFIG = {
   ],
   default_store: "valkey",
   model: "",
-  has_api_key: true, // unknown: let the server decide
+  model_ready: true, // unknown: let the server decide
   max_nights: 21,
   max_rounds: 3,
   scratchpad_ttl_s: 900,
@@ -352,7 +352,7 @@ function showFormError(text) {
 
 function setRunning(on) {
   app.running = on;
-  const blocked = on || !app.config.has_api_key;
+  const blocked = on || !app.config.model_ready;
   const plan = $("plan");
   plan.disabled = blocked;
   plan.textContent = on ? "Planning…" : "Plan my trip";
@@ -2138,10 +2138,10 @@ async function loadConfig() {
   // Any place works; the list is only inspiration for the input's suggestions.
   fill($("dest-list"), DESTINATION_IDEAS.map((d) => h("option", { value: d })));
   const warn = $("config-warning");
-  warn.textContent = app.config.has_api_key
+  warn.textContent = app.config.model_ready
     ? ""
-    : "Planning is unavailable right now: the server has no model API key configured.";
-  warn.classList.toggle("hidden", Boolean(app.config.has_api_key));
+    : "Planning is unavailable right now: the server has no model credentials configured.";
+  warn.classList.toggle("hidden", Boolean(app.config.model_ready));
   renderStoreSwitch();
   setRunning(false);
 }

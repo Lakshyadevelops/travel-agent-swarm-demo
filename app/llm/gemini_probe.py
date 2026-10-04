@@ -18,15 +18,18 @@ from app.config import settings
 
 async def probe_gemini_latency(samples: int = 30, concurrency: int = 4) -> dict[str, Any]:
     """Time `samples` short generate_content calls against the configured model."""
-    if not settings.google_api_key:
-        return {"available": False, "reason": "GOOGLE_API_KEY not set"}
+    if not settings.model_ready:
+        return {
+            "available": False,
+            "reason": "no model credentials (set GOOGLE_API_KEY, or GOOGLE_GENAI_USE_VERTEXAI=true)",
+        }
+
+    from app.llm.client import make_client, route_label
 
     try:
-        from google import genai
+        client = make_client()
     except ImportError:
         return {"available": False, "reason": "google-genai not installed"}
-
-    client = genai.Client(api_key=settings.google_api_key)
     sem = asyncio.Semaphore(concurrency)
     latencies: list[float] = []
     failures = 0
@@ -56,6 +59,7 @@ async def probe_gemini_latency(samples: int = 30, concurrency: int = 4) -> dict[
     return {
         "available": True,
         "model": settings.gemini_model,
+        "route": route_label(),
         "failures": failures,
         **describe(latencies),
     }

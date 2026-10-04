@@ -90,9 +90,9 @@ _client: Any = None
 def _genai_client() -> Any:
     global _client
     if _client is None:
-        from google import genai
+        from app.llm.client import make_client
 
-        _client = genai.Client(api_key=settings.google_api_key)
+        _client = make_client()
     return _client
 
 

@@ -280,7 +280,8 @@ async def config() -> dict[str, Any]:
         ],
         "default_store": UI_STORES[0],
         "model": settings.gemini_model,
-        "has_api_key": bool(settings.google_api_key),  # never the key itself
+        # Readiness only: never the key, and never which route (key vs Vertex).
+        "model_ready": settings.model_ready,
         "max_nights": MAX_TRIP_NIGHTS,
         "max_rounds": PLAN_LOOP_MAX_ROUNDS,
         "scratchpad_ttl_s": settings.scratchpad_ttl_seconds,
@@ -305,7 +306,7 @@ async def run(brief: Brief) -> StreamingResponse:
 
     async def execute() -> None:
         try:
-            if UI_LLM_MODE == "gemini" and not settings.google_api_key:
+            if UI_LLM_MODE == "gemini" and not settings.model_ready:
                 queue.put_nowait(_error_event("config"))
                 return
             result = await run_swarm(

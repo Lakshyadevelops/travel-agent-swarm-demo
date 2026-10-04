@@ -47,7 +47,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swarm}
       POSTGRES_DB: swarm
     volumes:
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Same file the app replays at startup (registry.ensure_schema), so the
+      # container's first boot and a managed Cloud SQL instance end up identical.
+      - ./app/state/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports: ["127.0.0.1:5432:5432"]
     <<: *caps
     healthcheck:

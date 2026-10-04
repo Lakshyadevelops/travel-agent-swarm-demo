@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -29,6 +30,11 @@ from app.state.valkey_scratchpad import ValkeyScratchpad
 from app.state.valkey_session import ValkeySessionService
 
 log = logging.getLogger(__name__)
+
+SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+# Arbitrary but fixed: every process that bootstraps the schema takes the same
+# advisory lock. Session-level locks use the same keyspace, so keep it unusual.
+SCHEMA_LOCK_KEY = 7_204_921_337
 
 
 @dataclass(frozen=True)
@@ -108,13 +114,18 @@ class BackendManager:
             return redis.Redis(connection_pool=pool, decode_responses=False)
 
         self._valkey = _valkey_client(settings.valkey_url)
-        self._valkey_cache = _valkey_client(settings.valkey_cache_url)
+        # The cache tier only serves the postgres_cached arm, which the UI never
+        # offers; the hosted deployment runs without one (VALKEY_CACHE_URL=off).
+        self._valkey_cache = (
+            _valkey_client(settings.valkey_cache_url) if settings.cache_enabled else None
+        )
         self._pg_pool = await asyncpg.create_pool(
             settings.postgres_dsn,
             min_size=settings.postgres_pool_min,
             max_size=settings.postgres_pool_max,
             command_timeout=10,
         )
+        await self.ensure_schema()
         # min_size=0: this arm is rarely used, and an idle connection per
         # process adds up (30 load-test workers × 1 broke max_connections).
         self._pg_pool_sync_off = await asyncpg.create_pool(
@@ -124,6 +135,21 @@ class BackendManager:
             command_timeout=10,
             server_settings={"synchronous_commit": "off"},
         )
+
+    async def ensure_schema(self) -> None:
+        """Apply app/state/schema.sql (all IF NOT EXISTS) to the Postgres arm.
+
+        The compose container runs the same file on first boot, so locally this
+        is a no-op; it exists for managed Postgres (Cloud SQL), which has no
+        init hook. A transaction-scoped advisory lock serialises the Cloud Run
+        instances that start together, otherwise two of them can both pass the
+        IF NOT EXISTS check and one fails on a duplicate index.
+        """
+        sql = SCHEMA_PATH.read_text(encoding="utf-8")
+        async with self._pg_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1);", SCHEMA_LOCK_KEY)
+                await conn.execute(sql)
 
     async def shutdown(self) -> None:
         for client in (self._valkey, self._valkey_cache):
@@ -157,6 +183,8 @@ class BackendManager:
         if backend_id == "postgres":
             return PostgresScratchpad(self._pg_pool, ttl, self._sem_pg, "postgres")
         if backend_id == "postgres_cached":
+            if self._valkey_cache is None:
+                raise ValueError("postgres_cached needs a cache tier: set VALKEY_CACHE_URL")
             origin = PostgresScratchpad(
                 self._pg_pool, ttl, self._sem_pg, "postgres_cached"
             )
@@ -200,9 +228,10 @@ class BackendManager:
         out: dict[str, Any] = {}
         checks = {
             "valkey": lambda: self._valkey.ping(),
-            "valkey_cache": lambda: self._valkey_cache.ping(),
             "postgres": lambda: self._pg_pool.fetchval("SELECT 1;"),
         }
+        if self._valkey_cache is not None:  # absent is a configuration, not an outage
+            checks["valkey_cache"] = lambda: self._valkey_cache.ping()
         for name, check in checks.items():
             try:
                 await check()
