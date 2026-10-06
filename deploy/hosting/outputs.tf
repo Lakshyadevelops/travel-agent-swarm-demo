@@ -18,6 +18,10 @@ output "run_service_account" {
   value = module.travel_swarm.run_service_account
 }
 
+output "smoke_service_account" {
+  value = google_service_account.smoke.email
+}
+
 output "valkey_host" {
   value = module.travel_swarm.valkey_host
 }

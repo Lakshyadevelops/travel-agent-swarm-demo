@@ -31,6 +31,12 @@ variable "image_readers" {
   default     = []
 }
 
+variable "operators" {
+  description = "People who run deploys; they may mint tokens for the smoke-test service account that calls the hosted URL through IAP."
+  type        = list(string)
+  default     = ["user:lakshyagg@google.com"]
+}
+
 variable "gemini_model" {
   type    = string
   default = "gemini-3.6-flash"

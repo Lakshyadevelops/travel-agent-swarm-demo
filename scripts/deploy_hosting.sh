@@ -93,12 +93,21 @@ cd deploy/hosting
 "$TF" apply -input=false -auto-approve -var "image_tag=$TAG"
 URL=$("$TF" output -raw demo_url)
 
-# 5. Health. IAP admits a Google identity token from the signed-in account.
+# 5. Health through IAP. The front end answers /healthz itself (404), so the
+#    check reads /api/health. IAP admits an ID token whose audience is its
+#    OAuth client id, minted for the smoke-test account by impersonation.
 say "health"
-TOKEN=$(gcloud auth print-identity-token 2>/dev/null || true)
-if curl -fsS -m 30 -H "Authorization: Bearer $TOKEN" "$URL/healthz"; then
+SMOKE_SA=$("$TF" output -raw smoke_service_account)
+cd ../..
+CLIENT_ID=$(curl -sS -o /dev/null -w '%{redirect_url}' -m 30 "$URL/" | sed -n 's/.*[?&]client_id=\([^&]*\).*/\1/p')
+TOKEN=""
+if [ -n "$CLIENT_ID" ]; then
+  TOKEN=$(gcloud auth print-identity-token --impersonate-service-account "$SMOKE_SA" \
+    --audiences "$CLIENT_ID" 2>/dev/null || true)
+fi
+if [ -n "$TOKEN" ] && curl -fsS -m 30 -H "Authorization: Bearer $TOKEN" "$URL/api/health"; then
   echo
 else
-  echo "(healthz not reachable with a CLI token; open $URL/healthz in a browser)"
+  echo "(could not reach $URL/api/health through IAP from here; open $URL in a browser)"
 fi
 say "demo: $URL"

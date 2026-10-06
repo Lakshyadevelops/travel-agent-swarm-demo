@@ -258,6 +258,7 @@ async def test_config_and_security_headers():
         page = await client.get("/")
         cfg = await client.get("/api/config")
         health = await client.get("/healthz")
+        health_alias = await client.get("/api/health")
 
     csp = page.headers["content-security-policy"]
     assert "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
@@ -273,6 +274,9 @@ async def test_config_and_security_headers():
     if settings.google_api_key:
         assert settings.google_api_key not in cfg.text
     assert set(health.json()["stores"]) == {"valkey", "postgres"}
+    # The hosted page reads /api/health: Google's front end answers /healthz
+    # itself (404) in front of IAP, so the alias must serve the same body.
+    assert health_alias.status_code == 200 and health_alias.json() == health.json()
 
 
 async def test_page_pins_asset_versions_and_is_revalidated():

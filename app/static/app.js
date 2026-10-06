@@ -2149,7 +2149,7 @@ async function loadConfig() {
 async function refreshHealth() {
   const el = $("health");
   try {
-    const res = await fetch("/healthz");
+    const res = await fetch("/api/health"); // not /healthz: swallowed by the front end behind IAP
     if (!res.ok) throw new Error(String(res.status));
     const stores = (await res.json()).stores || {};
     fill(

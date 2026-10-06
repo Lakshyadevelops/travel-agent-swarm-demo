@@ -265,7 +265,11 @@ def _error_event(category: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- routes
+# /healthz serves the Cloud Run startup probe, which reaches the container
+# directly. Behind IAP, Google's front end answers "*z" paths itself (404), so
+# the page and external checks use /api/health, the same handler.
 @app.get("/healthz")
+@app.get("/api/health", include_in_schema=False)
 async def healthz() -> dict[str, Any]:
     stores = await backends.health()
     return {"stores": {k: v for k, v in stores.items() if k in UI_STORES}}
