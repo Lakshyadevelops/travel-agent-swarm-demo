@@ -171,7 +171,7 @@ The same server runs as one container on Cloud Run against managed stores, sized
 
 | Root | Purpose | Access |
 |---|---|---|
-| `deploy/hosting/` | The 24x7 instance in `ks-opm-project` (us-west1), plus the Artifact Registry repository the image is published to | `domain:google.com` through IAP |
+| `deploy/hosting/` | The 24x7 instance in `ks-opm-project` (us-west1), plus the Artifact Registry repository the image is published to | `everyone@google.com` through IAP |
 | `click-to-deploy/` | go/demos click-to-deploy into an Argolis project, laid out per the [Demo Automation Guide](https://g3doc.corp.google.com/company/teams/godemos/demoautomation.md) | the deploying user through IAP |
 
 ```bash

@@ -76,7 +76,7 @@ variable "run_concurrency" {
 
 # ---------------------------------------------------------------- access
 variable "iap_members" {
-  description = "IAM members allowed through Identity-Aware Proxy, e.g. [\"domain:google.com\"] or [\"user:ldap@google.com\"]."
+  description = "IAM members allowed through Identity-Aware Proxy, e.g. [\"group:everyone@google.com\"] or [\"user:ldap@google.com\"]."
   type        = list(string)
 }
 

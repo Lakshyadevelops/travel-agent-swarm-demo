@@ -42,9 +42,9 @@ variable "vertex_location" {
 }
 
 variable "iap_members" {
-  description = "Who may open the hosted demo."
+  description = "Who may open the hosted demo. go/demos asks for the everyone@google.com group; fall back to user:<ldap>@google.com if Domain Restricted Sharing rejects it."
   type        = list(string)
-  default     = ["domain:google.com"]
+  default     = ["group:everyone@google.com"]
 }
 
 variable "enable_load_balancer" {
