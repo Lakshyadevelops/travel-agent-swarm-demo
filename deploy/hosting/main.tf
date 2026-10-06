@@ -81,12 +81,12 @@ resource "google_service_account" "build" {
   display_name = "Travel Concierge Swarm (Cloud Build)"
 }
 
-resource "google_artifact_registry_repository_iam_member" "build_writer" {
-  project    = var.project_id
-  location   = google_artifact_registry_repository.app.location
-  repository = google_artifact_registry_repository.app.name
-  role       = "roles/artifactregistry.writer"
-  member     = google_service_account.build.member
+# Project-level like the module's grants: the project holds one repository and
+# the applier needs only roles/resourcemanager.projectIamAdmin.
+resource "google_project_iam_member" "build_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = google_service_account.build.member
 }
 
 resource "google_project_iam_member" "build_logs" {
@@ -103,14 +103,12 @@ resource "google_project_iam_member" "build_source" {
 
 # Other projects that may pull the image (for example the go/demos
 # click-to-deploy target). Empty by default; see click-to-deploy/README.md.
-resource "google_artifact_registry_repository_iam_member" "readers" {
+resource "google_project_iam_member" "readers" {
   for_each = toset(var.image_readers)
 
-  project    = var.project_id
-  location   = google_artifact_registry_repository.app.location
-  repository = google_artifact_registry_repository.app.name
-  role       = "roles/artifactregistry.reader"
-  member     = each.value
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = each.value
 }
 
 # ---------------------------------------------------------------- the demo

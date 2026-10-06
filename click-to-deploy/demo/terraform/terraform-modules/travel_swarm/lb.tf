@@ -84,13 +84,5 @@ resource "google_compute_global_forwarding_rule" "lb" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
 
-# IAP grants on the backend service (the run.app URL is closed when the load
-# balancer is on, so the Cloud Run-level grants in iam.tf are not created).
-resource "google_iap_web_backend_service_iam_member" "users" {
-  for_each = var.enable_load_balancer && var.enable_iap ? toset(var.iap_members) : toset([])
-
-  project             = var.project_id
-  web_backend_service = google_compute_backend_service.run[0].name
-  role                = "roles/iap.httpsResourceAccessor"
-  member              = each.value
-}
+# IAP access for people is the project-level grant in iam.tf; it applies to
+# this backend service as well as to the run.app URL.

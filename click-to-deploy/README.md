@@ -55,7 +55,8 @@ us-west1-docker.pkg.dev/ks-opm-project/travel-swarm/app:<tag>
 
 The Argolis project's Cloud Run service agent
 (`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`)
-needs `roles/artifactregistry.reader` on that repository. The maintainer grants
+needs `roles/artifactregistry.reader` in `ks-opm-project` (granted at project
+level; it holds one repository). The maintainer grants
 it through `image_readers` in `deploy/hosting` (one entry per consuming
 project). If the google.com organisation's domain-restricted-sharing policy
 rejects the cross-organisation grant, the fallback is to build from source in

@@ -59,7 +59,7 @@ say "registry"
 "$TF" apply -input=false -auto-approve -var "image_tag=$TAG" \
   -target=google_artifact_registry_repository.app \
   -target=google_service_account.build \
-  -target=google_artifact_registry_repository_iam_member.build_writer \
+  -target=google_project_iam_member.build_writer \
   -target=google_project_iam_member.build_logs \
   -target=google_project_iam_member.build_source
 cd ../..

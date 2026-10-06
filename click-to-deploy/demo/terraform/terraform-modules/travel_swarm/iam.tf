@@ -18,11 +18,14 @@ resource "google_project_iam_member" "run_vertex" {
   member  = google_service_account.run.member
 }
 
-resource "google_secret_manager_secret_iam_member" "run_postgres_dsn" {
-  project   = var.project_id
-  secret_id = google_secret_manager_secret.postgres_dsn.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.run.member
+# Grants are project-level on purpose. The project is single-purpose, and an
+# applier holding roles/resourcemanager.projectIamAdmin can set them without
+# the Secret Manager, Cloud Run and IAP admin roles that per-resource bindings
+# need. One IAP binding also covers both routes (run.app URL or load balancer).
+resource "google_project_iam_member" "run_postgres_dsn" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = google_service_account.run.member
 }
 
 # Identity-Aware Proxy. IAP's service agent must be allowed to invoke the
@@ -36,23 +39,18 @@ resource "google_project_service_identity" "iap" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
+resource "google_project_iam_member" "iap_invoker" {
   count = var.enable_iap ? 1 : 0
 
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.app.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_project_service_identity.iap.email}"
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_project_service_identity.iap.email}"
 }
 
-# Direct Cloud Run IAP (no load balancer): grants live on the service itself.
-resource "google_iap_web_cloud_run_service_iam_member" "users" {
-  for_each = var.enable_iap && !var.enable_load_balancer ? toset(var.iap_members) : toset([])
+resource "google_project_iam_member" "iap_users" {
+  for_each = var.enable_iap ? toset(var.iap_members) : toset([])
 
-  project                = var.project_id
-  location               = var.region
-  cloud_run_service_name = google_cloud_run_v2_service.app.name
-  role                   = "roles/iap.httpsResourceAccessor"
-  member                 = each.value
+  project = var.project_id
+  role    = "roles/iap.httpsResourceAccessor"
+  member  = each.value
 }

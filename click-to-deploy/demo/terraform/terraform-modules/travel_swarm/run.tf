@@ -112,7 +112,7 @@ resource "google_cloud_run_v2_service" "app" {
     google_compute_forwarding_rule.postgres,
     google_sql_user.swarm,
     google_secret_manager_secret_version.postgres_dsn,
-    google_secret_manager_secret_iam_member.run_postgres_dsn,
+    google_project_iam_member.run_postgres_dsn,
     google_project_iam_member.run_vertex,
   ]
 }
