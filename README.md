@@ -183,6 +183,14 @@ The image is tagged with the short commit hash and Terraform pins that tag. `req
 
 What the app does differently when hosted, all driven by environment variables (see `.env.example`): `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION=global` select Vertex AI (the Gemini 3.x models are served from `global`, not from a region); the Postgres schema (`app/state/schema.sql`, idempotent) is applied at startup under an advisory lock because Cloud SQL has no init hook; `VALKEY_CACHE_URL=off` drops the cache tier the UI never offers; `PORT` and `RUNS_DIR=/tmp/runs` come from Cloud Run. Details and the submission checklist: `click-to-deploy/README.md`.
 
+The hosted instance is `https://travel-swarm-app-tjb6iismyq-uw.a.run.app` (sign in with a google.com account). From a terminal, IAP accepts a gcloud identity token because the module registers gcloud's OAuth client with IAP (`iap_programmatic_clients`):
+
+```bash
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" https://travel-swarm-app-tjb6iismyq-uw.a.run.app/api/health
+```
+
+Use `/api/health`, not `/healthz`: Google's front end answers paths ending in `z` itself (404) before IAP sees them. `/healthz` still serves the Cloud Run startup probe, which reaches the container directly.
+
 ## Layout
 
 ```

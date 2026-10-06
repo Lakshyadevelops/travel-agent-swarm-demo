@@ -86,6 +86,17 @@ variable "enable_iap" {
   default     = true
 }
 
+variable "iap_programmatic_clients" {
+  description = <<-EOT
+    OAuth client ids whose ID tokens IAP accepts besides its own Google-managed
+    client, so the demo can be called from a terminal. The default is gcloud's
+    client: `gcloud auth print-identity-token` from an account in iap_members
+    then works. IAM is still enforced; empty list = browser sign-in only.
+  EOT
+  type        = list(string)
+  default     = ["32555940559.apps.googleusercontent.com"]
+}
+
 # Optional external HTTPS load balancer with a Google-managed certificate, for
 # a vanity hostname (go/demos hosting route 2). IAP then sits on the backend
 # service and Cloud Run only accepts traffic from the load balancer.

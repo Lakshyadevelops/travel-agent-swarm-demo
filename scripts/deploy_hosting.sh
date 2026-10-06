@@ -94,17 +94,12 @@ cd deploy/hosting
 URL=$("$TF" output -raw demo_url)
 
 # 5. Health through IAP. The front end answers /healthz itself (404), so the
-#    check reads /api/health. IAP admits an ID token whose audience is its
-#    OAuth client id, minted for the smoke-test account by impersonation.
+#    check reads /api/health. IAP accepts the signed-in account's gcloud ID
+#    token because the module registers gcloud's OAuth client with IAP
+#    (iap_programmatic_clients); the account must be in iap_members.
 say "health"
-SMOKE_SA=$("$TF" output -raw smoke_service_account)
 cd ../..
-CLIENT_ID=$(curl -sS -o /dev/null -w '%{redirect_url}' -m 30 "$URL/" | sed -n 's/.*[?&]client_id=\([^&]*\).*/\1/p')
-TOKEN=""
-if [ -n "$CLIENT_ID" ]; then
-  TOKEN=$(gcloud auth print-identity-token --impersonate-service-account "$SMOKE_SA" \
-    --audiences "$CLIENT_ID" 2>/dev/null || true)
-fi
+TOKEN=$(gcloud auth print-identity-token 2>/dev/null || true)
 if [ -n "$TOKEN" ] && curl -fsS -m 30 -H "Authorization: Bearer $TOKEN" "$URL/api/health"; then
   echo
 else

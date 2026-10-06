@@ -111,30 +111,6 @@ resource "google_project_iam_member" "readers" {
   member  = each.value
 }
 
-# ---------------------------------------------------------------- smoke tests
-# IAP admits a service-account ID token minted for its OAuth client id; a
-# user's gcloud identity token cannot carry that audience. The deploy script
-# impersonates this account (no key) to call the hosted URL after an apply.
-resource "google_service_account" "smoke" {
-  project      = var.project_id
-  account_id   = "travel-swarm-smoke"
-  display_name = "Travel Concierge Swarm (post-deploy checks through IAP)"
-}
-
-resource "google_project_iam_member" "smoke_iap" {
-  project = var.project_id
-  role    = "roles/iap.httpsResourceAccessor"
-  member  = google_service_account.smoke.member
-}
-
-resource "google_service_account_iam_member" "smoke_impersonators" {
-  for_each = toset(var.operators)
-
-  service_account_id = google_service_account.smoke.name
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = each.value
-}
-
 # ---------------------------------------------------------------- the demo
 module "travel_swarm" {
   source = "../../click-to-deploy/demo/terraform/terraform-modules/travel_swarm"

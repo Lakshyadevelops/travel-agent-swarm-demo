@@ -54,3 +54,31 @@ resource "google_project_iam_member" "iap_users" {
   role    = "roles/iap.httpsResourceAccessor"
   member  = each.value
 }
+
+# Terminal access: IAP's Google-managed client only admits browser sign-ins,
+# so the listed OAuth clients (gcloud by default) are allowed to present ID
+# tokens too. Settings live on the resource IAP guards: the Cloud Run service,
+# or the backend service when the load balancer is on.
+resource "google_iap_settings" "run" {
+  count = var.enable_iap && !var.enable_load_balancer && length(var.iap_programmatic_clients) > 0 ? 1 : 0
+
+  name = "projects/${var.project_number}/iap_web/cloud_run-${var.region}/services/${google_cloud_run_v2_service.app.name}"
+
+  access_settings {
+    oauth_settings {
+      programmatic_clients = var.iap_programmatic_clients
+    }
+  }
+}
+
+resource "google_iap_settings" "lb" {
+  count = var.enable_iap && var.enable_load_balancer && length(var.iap_programmatic_clients) > 0 ? 1 : 0
+
+  name = "projects/${var.project_number}/iap_web/compute/services/${google_compute_backend_service.run[0].name}"
+
+  access_settings {
+    oauth_settings {
+      programmatic_clients = var.iap_programmatic_clients
+    }
+  }
+}
