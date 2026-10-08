@@ -5,9 +5,9 @@ A 6-agent travel planner built on Google's Agent Development Kit (ADK). It is us
 
 ## Architecture
 
-![Application architecture: browser → IAP → FastAPI SSE → ADK swarm → scratchpad tools → one store per run](docs/architecture/application.png)
+![How a trip gets planned: browser → FastAPI server → ADK agent swarm (Supervisor → planning loop of three parallel research agents + Budget Guardrail → Itinerary → Supervisor) → shared scratchpad → Valkey or PostgreSQL](docs/architecture/application.png)
 
-The hosted deployment (Cloud Run, IAP, Memorystore for Valkey, Cloud SQL, Vertex AI) is drawn in [docs/architecture/deployment.png](docs/architecture/deployment.png); see [Deploy to Google Cloud](#deploy-to-google-cloud). Both pictures (PNG + SVG) come from `scripts/render_architecture.py` (Graphviz + the `diagrams` package, instructions in the docstring); the labels are facts from the code and the Terraform module, so re-render when either changes.
+Rendered by `scripts/render_architecture.py` (Graphviz + the `graphviz` package, instructions in the docstring). The picture is deliberately high level — roles, the planning loop, the scratchpad hand-offs and the choice of store — but every word in it is true of the app, so re-render it when the roster, the loop or the stores change.
 
 ## The agents
 
@@ -173,8 +173,6 @@ Caveats:
 
 ## Deploy to Google Cloud
 
-![Deployment on Google Cloud: Googlers → IAP → Cloud Run → PSC endpoints → Memorystore for Valkey / Cloud SQL; Vertex AI with Google Search grounding](docs/architecture/deployment.png)
-
 The same server runs as one container on Cloud Run against managed stores, sized as the small-vs-small question the demo asks: **Memorystore for Valkey** (`SHARED_CORE_NANO`, 1 shard, cluster mode off) and **Cloud SQL for PostgreSQL 17** (`db-g1-small`). Both are Private Service Connect endpoints in a private VPC; Cloud Run reaches them through Direct VPC egress. Gemini is called through **Vertex AI** with the service account's credentials, so there is no API key anywhere in the deployment. The URL sits behind **Identity-Aware Proxy**. One Terraform module (`click-to-deploy/demo/terraform/terraform-modules/travel_swarm`) describes all of it; two roots use it:
 
 | Root | Purpose | Access |
@@ -213,7 +211,7 @@ app/telemetry/  per-op instrumentation, JSONL op log, live state feed for the UI
 app/static/     the two-tab UI (DOM APIs only, strict CSP)
 scripts/        benchmarks, calibration, load test drivers, deploy_hosting.sh, render_architecture.py
 results/        committed benchmark data and latency trace
-docs/architecture/  rendered architecture diagrams (deployment + application, PNG and SVG)
+docs/architecture/  the architecture diagram (PNG and SVG)
 click-to-deploy/  go/demos click-to-deploy Terraform (module + root + org policy config)
 deploy/hosting/   Terraform root for the hosted instance in ks-opm-project
 Dockerfile, cloudbuild.yaml, requirements-runtime.{in,txt}   the container image
