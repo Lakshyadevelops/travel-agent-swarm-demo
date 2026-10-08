@@ -49,8 +49,8 @@ def application() -> None:
            fillcolor="#fef7e0", color=YELLOW)
 
     with g.subgraph(name="cluster_swarm") as sw:
-        sw.attr(label="Agent swarm - Google ADK, six roles", fontname=FONT, fontsize="14",
-                style="rounded", color="#c6dafc", bgcolor="#f3f8ff")
+        sw.attr(label="Agent swarm - Google ADK, six roles, one shared scratchpad", fontname=FONT,
+                fontsize="14", style="rounded", color="#c6dafc", bgcolor="#f3f8ff")
         # `gport` is an invisible anchor left of the Supervisor: the Gemini
         # connector starts there, so it visibly comes out of the swarm box.
         with sw.subgraph() as top:
@@ -68,13 +68,16 @@ def application() -> None:
                     row.attr(rank="same")
                     row.node("scout", "Destination Scout\nwhere to base, what to see")
                     row.node("stay", "Stay Agent\na hotel in the scout's pick")
-                    row.node("transit", "Transit Agent\nflights and transfers")
+                    row.node("transit", "Transit Agent\nflights and the airport transfer")
             loop.node("budget", "Budget Guardrail\nprices the whole plan")
         sw.node("itinerary", "Itinerary Agent\nday-by-day timeline")
         sw.node("final", "Supervisor\nfinal itinerary + summary")
+        # The scratchpad is drawn as a layer under all the agents, as wide as the
+        # box, so it reads as shared by every role rather than owned by one.
+        sw.node("pad", "Shared scratchpad - every agent posts its findings here and waits for the others'\n"
+                       "every read and write is timed",
+                width="11", fillcolor="#f1f3f4", color=GREY, penwidth="1.4")
 
-    g.node("pad", "Shared scratchpad\nagents post findings and wait for each other's\nevery read and write is timed",
-           color=GREY, penwidth="1.4")
     g.node("valkey", "Valkey\nMemorystore", fillcolor="#fce8e6", color=RED)
     g.node("postgres", "PostgreSQL\nCloud SQL", fillcolor="#e6f4ea", color=GREEN)
 
@@ -102,7 +105,7 @@ def application() -> None:
     # What the agents lean on (drawn once for the swarm, not per agent).
     g.edge("gport", "intake", style="invis")  # flat edge: anchor left of the Supervisor
     g.edge("gemini", "gport", dir="back", color=YELLOW, penwidth="1.6", headclip="false")
-    g.edge("final", "pad", ltail="cluster_swarm", label="reads and writes")
+    g.edge("final", "pad", style="invis")  # keeps the scratchpad layer at the bottom of the box
     g.edge("pad", "valkey", label="run on Valkey", color=RED, fontcolor=RED, penwidth="1.6")
     g.edge("pad", "postgres", label="run on PostgreSQL", color=GREEN, fontcolor=GREEN, penwidth="1.6")
 
