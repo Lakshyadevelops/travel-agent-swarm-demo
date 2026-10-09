@@ -88,33 +88,41 @@ the repository.
 
 ## Deploying by hand (to test the configuration)
 
-From a machine with `gcloud` authenticated as your Argolis admin
-(`admin@<ldap>.altostrat.com`) and an existing Argolis project:
+From a machine with `gcloud` logged in as the deploying account and
+Application Default Credentials for the same account
+(`gcloud auth application-default login` — Terraform uses ADC; on corp
+machines a plain gcloud user token is rejected when another binary presents
+it), against an existing project with billing:
 
 ```bash
 cd click-to-deploy/demo/terraform
 terraform init
 terraform apply \
-  -var project_id=<argolis-project> -var project_number=<number> \
-  -var gcp_account_name=admin@<ldap>.altostrat.com
+  -var project_id=<project> -var project_number=<number> \
+  -var gcp_account_name=<account e-mail>
 ```
 
-The other five runner variables have empty defaults. First apply takes
-20–25 minutes: the image build ≈ 4 min, Cloud SQL and Memorystore ≈ 15 min.
-`terraform output demo_url` prints the IAP-protected link; `terraform output
-image` the image that was built. Org policies are not touched by this root; if
-the project still has Argolis' default `run.allowedIngress`, relax it first
-(`gcloud resource-manager org-policies` / console) or apply `org_policy/`.
+The other five runner variables have empty defaults. Measured on the first
+real run (a fresh google.com project, 2026-10-09): 41 resources, image build
+38 s, Memorystore 6 m 51 s, Cloud SQL 5 m 09 s (in parallel), whole apply
+≈ 12 minutes. `terraform output demo_url` prints the IAP-protected link;
+`terraform output image` the image that was built. Org policies are not
+touched by this root; in an Argolis project with the default
+`run.allowedIngress`, relax it first (console, or apply `org_policy/`).
 
 ## Cost (list prices, us-west1)
 
 Memorystore `SHARED_CORE_NANO` ≈ \$23/month, Cloud SQL `db-g1-small` ≈ \$25/month
 plus 10 GB SSD ≈ \$2, Cloud Run with one warm instance ≈ \$5–15/month depending
-on traffic, one Cloud Build of ≈ 4 minutes per deployment. Roughly \$55–65/month
+on traffic, one Cloud Build of under a minute per deployment. Roughly \$55–65/month
 idle.
 
 ## Teardown
 
 `terraform destroy` removes everything, including the stores, the image
 repository and the build bucket (deletion protection is off for the demo).
-APIs stay enabled.
+APIs stay enabled. Memorystore takes ≈ 10 minutes to delete. If the last step
+fails with `subnetwork … is already being used by … serverless-ipv4-cloudrun-…`,
+Cloud Run has not yet released the Direct VPC egress address it reserved in the
+subnet; it does so on its own within minutes to an hour — run `terraform
+destroy` again then.
