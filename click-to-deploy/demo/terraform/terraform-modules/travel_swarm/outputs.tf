@@ -47,3 +47,8 @@ output "load_balancer_ip" {
 output "network" {
   value = google_compute_network.vpc.id
 }
+
+output "image" {
+  description = "Image the service runs (built in-project when var.image was empty)."
+  value       = local.image
+}

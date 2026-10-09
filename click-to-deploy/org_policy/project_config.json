@@ -1,31 +1,8 @@
 {
-  "_comment": "Dynamic project configuration read by org_policy/project_resource.tf (copied unmodified from the Sample_Standard_Demos template). Reconcile the key names below against the template's project_config.json before raising the PR; the values are what this demo needs.",
-  "demo_name": "travel-concierge-swarm",
-  "required_apis": [
-    "cloudresourcemanager.googleapis.com",
-    "iam.googleapis.com",
-    "compute.googleapis.com",
-    "networkconnectivity.googleapis.com",
-    "run.googleapis.com",
-    "sqladmin.googleapis.com",
-    "memorystore.googleapis.com",
-    "secretmanager.googleapis.com",
-    "aiplatform.googleapis.com",
-    "iap.googleapis.com",
-    "artifactregistry.googleapis.com"
-  ],
-  "org_policies": [
+  "constraints": [
     {
-      "constraint": "constraints/run.allowedIngress",
-      "type": "list",
-      "allow_all": true,
-      "restore_after_deployment": true,
-      "reason": "Cloud Run's built-in Identity-Aware Proxy requires the service to accept all ingress; access is gated by IAP (roles/iap.httpsResourceAccessor for the deploying user), not by network. The constraint is evaluated only when the service is created or updated, so it can be restored once the deployment finishes."
+      "constraint": "run.allowedIngress",
+      "restore_post_deployment": true
     }
-  ],
-  "notes": [
-    "No VM, no public IP, no VPC peering, no service-account key: nothing here conflicts with the Argolis default policies (compute.vmExternalIpAccess, compute.restrictVpcPeering, iam.disableServiceAccountKeyCreation, sql.restrictPublicIp).",
-    "Both stores are Private Service Connect endpoints inside the demo's own subnet; Cloud SQL has ipv4_enabled=false and Memorystore has no public endpoint.",
-    "IAP admits user:<gcp_account_name> only; iam.allowedPolicyMemberDomains is satisfied because that account belongs to the Argolis organisation."
   ]
 }

@@ -1,0 +1,13 @@
+# Source upload for `gcloud builds submit` (click-to-deploy builds the image
+# inside the Argolis project). Mirrors .dockerignore plus the two files the
+# build itself needs. Keep .env and everything else out.
+*
+!app/
+!results/llm_trace.jsonl
+!requirements-runtime.txt
+!Dockerfile
+!.dockerignore
+!cloudbuild.yaml
+**/__pycache__/
+**/*.pyc
+**/.DS_Store

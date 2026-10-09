@@ -60,7 +60,7 @@ resource "google_cloud_run_v2_service" "app" {
     }
 
     containers {
-      image = var.image
+      image = local.image
 
       ports {
         container_port = 8080
@@ -106,8 +106,10 @@ resource "google_cloud_run_v2_service" "app" {
     }
   }
 
-  # Everything the container touches in its first second of life.
+  # Everything the container touches in its first second of life, and the
+  # image itself when this module built it.
   depends_on = [
+    null_resource.build,
     google_memorystore_instance.valkey,
     google_compute_forwarding_rule.postgres,
     google_sql_user.swarm,

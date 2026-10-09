@@ -185,7 +185,7 @@ scripts/deploy_hosting.sh --plan   # what would change
 scripts/deploy_hosting.sh          # build the image (docker), push, terraform apply, print the URL
 ```
 
-The image is tagged with the short commit hash and Terraform pins that tag. `requirements-runtime.txt` is a hashed lockfile (`scripts/lock_runtime_requirements.sh`), so the build installs with `--require-hashes`. On a corp machine pass the PyPI mirror: `docker build --build-arg PIP_INDEX_URL=... --build-arg PIP_TRUSTED_HOST=...`.
+For the hosted instance the image is tagged with the short commit hash and Terraform pins that tag. Click-to-deploy cannot pull from that registry (every click is a brand-new Argolis project), so there the module builds the image inside the Argolis project with Cloud Build and tags it with a hash of the source (`terraform-modules/travel_swarm/build.tf`). `requirements-runtime.txt` is a hashed lockfile (`scripts/lock_runtime_requirements.sh`), so both builds install with `--require-hashes`. On a corp machine pass the PyPI mirror: `docker build --build-arg PIP_INDEX_URL=... --build-arg PIP_TRUSTED_HOST=...`.
 
 What the app does differently when hosted, all driven by environment variables (see `.env.example`): `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION=global` select Vertex AI (the Gemini 3.x models are served from `global`, not from a region); the Postgres schema (`app/state/schema.sql`, idempotent) is applied at startup under an advisory lock because Cloud SQL has no init hook; `VALKEY_CACHE_URL=off` drops the cache tier the UI never offers; `PORT` and `RUNS_DIR=/tmp/runs` come from Cloud Run. Details and the submission checklist: `click-to-deploy/README.md`.
 
@@ -209,10 +209,10 @@ app/bench/      interleaved benchmark, sweeps, concurrent-user load test
 app/llm/        fake model with latency replay, latency model, Gemini client + probe
 app/telemetry/  per-op instrumentation, JSONL op log, live state feed for the UI
 app/static/     the two-tab UI (DOM APIs only, strict CSP)
-scripts/        benchmarks, calibration, load test drivers, deploy_hosting.sh, render_architecture.py
+scripts/        benchmarks, calibration, load test drivers, deploy_hosting.sh, c2d_prepare.sh, render_architecture.py
 results/        committed benchmark data and latency trace
 docs/architecture/  the architecture diagram (PNG and SVG)
-click-to-deploy/  go/demos click-to-deploy Terraform (module + root + org policy config)
+click-to-deploy/  go/demos click-to-deploy Terraform (module incl. in-project image build, root, org policy config)
 deploy/hosting/   Terraform root for the hosted instance in ks-opm-project
 Dockerfile, cloudbuild.yaml, requirements-runtime.{in,txt}   the container image
 ```

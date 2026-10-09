@@ -1,7 +1,7 @@
 # APIs the stack needs. disable_on_destroy = false: tearing the demo down must
 # not switch off APIs that something else in the project may rely on.
 locals {
-  services = [
+  base_services = [
     "cloudresourcemanager.googleapis.com", # project IAM bindings
     "iam.googleapis.com",
     "compute.googleapis.com",
@@ -13,6 +13,13 @@ locals {
     "aiplatform.googleapis.com",
     "iap.googleapis.com",
   ]
+  # Only when the module builds the image itself (build.tf).
+  build_services = [
+    "cloudbuild.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "storage.googleapis.com",
+  ]
+  services = concat(local.base_services, var.image == "" ? local.build_services : [])
 }
 
 resource "google_project_service" "apis" {

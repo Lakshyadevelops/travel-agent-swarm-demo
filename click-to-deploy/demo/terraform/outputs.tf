@@ -18,3 +18,8 @@ output "postgres_dsn_secret" {
 output "run_service_account" {
   value = module.travel_swarm.run_service_account
 }
+
+output "image" {
+  description = "Image Cloud Run is serving (built in this project unless var.image was set)."
+  value       = module.travel_swarm.image
+}

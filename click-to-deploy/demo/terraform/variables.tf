@@ -1,9 +1,14 @@
 # Demo-specific inputs (the mandatory runner inputs live in base_variables.tf).
 
 variable "image" {
-  description = "Pre-built demo image. Published from the maintainer's project; see click-to-deploy/README.md for how the Argolis project is granted pull access."
+  description = <<-EOT
+    Leave empty (the default): the demo image is built by Cloud Build inside the
+    Argolis project from this repository, so a fresh project needs no access to
+    anyone else's registry. Set a full image reference only to skip the build
+    with an image that project can already pull.
+  EOT
   type        = string
-  default     = "us-west1-docker.pkg.dev/ks-opm-project/travel-swarm/app:latest"
+  default     = ""
 }
 
 variable "region" {

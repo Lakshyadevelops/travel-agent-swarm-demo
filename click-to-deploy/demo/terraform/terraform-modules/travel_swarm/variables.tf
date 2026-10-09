@@ -41,8 +41,20 @@ variable "enable_apis" {
 
 # ---------------------------------------------------------------- app
 variable "image" {
-  description = "Fully qualified container image for the demo server, e.g. us-west1-docker.pkg.dev/<project>/travel-swarm/app:<tag>."
+  description = <<-EOT
+    Container image for the demo server, e.g.
+    us-west1-docker.pkg.dev/<project>/travel-swarm/app:<tag>. Leave empty to
+    have the module build it inside project_id with Cloud Build from
+    source_dir (see build.tf); that is what click-to-deploy does.
+  EOT
   type        = string
+  default     = ""
+}
+
+variable "source_dir" {
+  description = "Repository root (holds Dockerfile and cloudbuild.yaml). Only used when image is empty."
+  type        = string
+  default     = ""
 }
 
 variable "gemini_model" {
