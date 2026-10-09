@@ -1,8 +1,14 @@
 # Source upload for `gcloud builds submit` (click-to-deploy builds the image
-# inside the Argolis project). Mirrors .dockerignore plus the two files the
-# build itself needs. Keep .env and everything else out.
+# inside the Argolis project). Mirrors .dockerignore plus the files the build
+# itself needs. Keep .env and everything else out.
+#
+# gitignore semantics (unlike .dockerignore): a file cannot be re-included if
+# its parent directory is excluded, hence the directory is re-included first and
+# its other contents excluded again.
 *
 !app/
+!results/
+results/*
 !results/llm_trace.jsonl
 !requirements-runtime.txt
 !Dockerfile
