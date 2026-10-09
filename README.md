@@ -5,9 +5,9 @@ A 6-agent travel planner built on Google's Agent Development Kit (ADK). It is us
 
 ## Architecture
 
-![The agent swarm: Supervisor → planning loop (Destination Scout, Stay Agent and Transit Agent in parallel, then the Budget Guardrail; over budget → price caps → next round, up to 3) → Itinerary Agent → Supervisor](docs/architecture/application.png)
+![The agent swarm: Supervisor → planning loop (Destination Scout, Stay Agent and Transit Agent in parallel, then the Budget Guardrail; over budget → price caps → next round, up to 3) → Itinerary Agent → Supervisor; underneath, the shared state every agent reads and writes — the scratchpad and the ADK session storage — kept in the run's store, Valkey or PostgreSQL](docs/architecture/application.png)
 
-The picture shows the agents only — the six roles, the planning loop and the hand-offs between agents. The server, the shared scratchpad, the two stores and Gemini are described in the sections below. Rendered by `scripts/render_architecture.py` (Graphviz + the `graphviz` package, instructions in the docstring); every word in it is true of the app, so re-render it when the roster or the loop changes.
+The picture shows the agents — the six roles, the planning loop and the hand-offs between agents — and the shared state they all read and write: the scratchpad (findings and hand-offs) and the ADK session storage (the session and its event log), both kept in whichever store the run uses. The server, the store internals and Gemini are described in the sections below. Rendered by `scripts/render_architecture.py` (Graphviz + the `graphviz` package, instructions in the docstring); every word in it is true of the app, so re-render it when the roster, the loop or the state layout changes.
 
 ## The agents
 
